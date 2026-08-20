@@ -1,0 +1,27 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+
+# ── ฐานข้อมูลอุกกาบาต ────────────────────────────────────────
+# git เก็บเฉพาะ data/meteors.db.gz (28 MB)
+# ตัวเต็ม 60 MB สร้างเองตอนบูตครั้งแรก (game/db.py::_ensure_db)
+data/meteors.db
+data/meteors.db.part
+
+# ── ไฟล์ดิบของ GMN ──────────────────────────────────────────
+# traj_summary ใหญ่ระดับ 100 MB - 3 GB ห้ามเข้า git
+# อยากสร้าง DB ใหม่ให้โหลดจาก globalmeteornetwork.org แล้วรัน tools/bake_gmn.py
+data/*.txt
+
+# ── leaderboard ─────────────────────────────────────────────
+# คะแนนของแต่ละเครื่อง/แต่ละงาน ไม่ใช่ของที่ต้องอยู่ใน repo
+data/leaderboard.db
+data/leaderboard.json
+*-leaderboard.json
+
+.impeccable/
+.DS_Store
+Thumbs.db

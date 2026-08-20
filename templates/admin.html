@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GMNshooter — Admin</title>
+<style>
+  :root { --accent:#59c0ff; --good:#8fffa8; --danger:#ff4d6d; --warn:#ffb37a; }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html,body { min-height:100%; background:#04060d; color:#fff;
+    font-family:"Bahnschrift","Segoe UI",system-ui,sans-serif; font-weight:700; }
+  body { background:radial-gradient(ellipse at 50% -10%, #0d1730 0%, #04060d 62%); }
+
+  /* แผงมี 3 อย่างเท่านั้น: รหัสห้อง · เริ่มเกม · leaderboard */
+  .wrap { max-width:1100px; margin:0 auto; padding:4vh 3vh 6vh;
+          display:grid; gap:3vh; grid-template-columns:minmax(0,1fr) minmax(0,1fr); }
+  @media (max-width:820px) { .wrap { grid-template-columns:1fr; } }
+
+  .head { grid-column:1/-1; display:flex; align-items:baseline; gap:1.6vh; }
+  .head h1 { font-size:3.4vh; letter-spacing:.08em; }
+  .head h1 .b { color:var(--accent); }
+  .head .lead { font-size:1.7vh; opacity:.45; letter-spacing:.28em; }
+
+  .card { border:1px solid rgba(255,255,255,.10); border-radius:1.6vh;
+          background:rgba(255,255,255,.03); padding:3vh; }
+  h3 { font-size:1.6vh; letter-spacing:.24em; opacity:.45; margin-bottom:1.6vh; }
+
+  .code { font-size:13vh; line-height:.95; color:var(--accent); letter-spacing:.05em;
+          text-shadow:0 0 8vh rgba(89,192,255,.4); text-align:center; }
+  .join { font-size:1.9vh; opacity:.7; font-weight:400; text-align:center; margin-top:1.4vh; }
+  .join b { color:var(--accent); font-weight:700; }
+
+  .status { display:flex; flex-wrap:wrap; gap:2.4vh; font-size:1.9vh;
+            margin-top:2.4vh; padding-top:2.4vh; border-top:1px solid rgba(255,255,255,.08); }
+  .status span { opacity:.5; font-weight:400; }
+  .dots { display:flex; gap:.8vh; align-items:center; }
+  .dot { width:2vh; height:2vh; border-radius:50%; opacity:.25; }
+  .dot.on { opacity:1; }
+
+  button { font:700 2.2vh "Bahnschrift",sans-serif; padding:1.6vh; border-radius:1vh;
+           border:none; background:var(--accent); color:#06121c; cursor:pointer; width:100%; }
+  button:hover { filter:brightness(1.08); }
+  button.ghost { background:rgba(255,255,255,.09); color:#fff; font-size:1.8vh; padding:1.2vh; }
+  button:disabled { opacity:.3; cursor:default; filter:none; }
+  #start { font-size:3vh; padding:2.4vh; letter-spacing:.06em; }
+
+  input { font:700 2.2vh "Bahnschrift",sans-serif; padding:1.4vh; border-radius:1vh; width:100%;
+          border:.25vh solid rgba(255,255,255,.2); background:rgba(255,255,255,.06); color:#fff; }
+  input:focus { outline:none; border-color:var(--accent); }
+
+  .stack { display:flex; flex-direction:column; gap:1.4vh; }
+
+  table { font-size:1.7vh; font-weight:400; border-collapse:collapse; width:100%; }
+  td { padding:.7vh .5vh; border-bottom:1px solid rgba(255,255,255,.06); }
+  td:first-child { opacity:.4; width:3vh; font-weight:700; }
+  td.sc { text-align:right; font-weight:700; font-variant-numeric:tabular-nums; }
+  td.hd { color:var(--accent); }
+
+  .msg { font-size:1.8vh; min-height:2.4vh; color:var(--good); font-weight:400; }
+  .msg.bad { color:var(--danger); }
+
+  .gate { position:fixed; inset:0; z-index:50; display:flex; flex-direction:column;
+          align-items:center; justify-content:center; gap:2.4vh;
+          background:radial-gradient(ellipse at 50% 40%, #0d1730 0%, #04060d 75%); }
+  .gate.off { display:none; }
+  .gate h1 { font-size:7vh; letter-spacing:.08em; }
+  .gate h1 .b { color:var(--accent); }
+  .gate .lead { font-size:1.8vh; opacity:.45; letter-spacing:.28em; }
+  .gate input, .gate button { width:38vh; text-align:center; }
+
+  .foot { grid-column:1/-1; display:flex; justify-content:space-between; align-items:center;
+          gap:2vh; font-size:1.4vh; opacity:.35; font-weight:400; }
+  .foot button { width:auto; padding:.9vh 2vh; font-size:1.4vh; }
+</style>
+</head>
+<body>
+
+<!-- ประตูรหัสผ่าน — ไม่งั้นเด็กเปิด /admin เองแล้วกดเริ่มตัดหน้าคนอื่นได้ -->
+<div class="gate" id="gate">
+  <h1>GMN<span class="b">shooter</span></h1>
+  <div class="lead">แผงควบคุมผู้ดูแล</div>
+  <input id="gatepw" type="password" placeholder="รหัสผ่าน" autocomplete="off">
+  <button id="gatego">เข้าสู่ระบบ</button>
+  <div class="msg bad" id="gateerr"></div>
+</div>
+
+<div class="wrap">
+  <div class="head">
+    <h1>GMN<span class="b">shooter</span></h1>
+    <div class="lead">แผงควบคุมผู้ดูแล</div>
+  </div>
+
+  <!-- 1 + 2. รหัสห้อง / เริ่มเกม -->
+  <div class="card">
+    <h3>รหัสห้อง</h3>
+    <div class="code" id="bigcode">—</div>
+    <div class="join">ให้ผู้เล่นเปิด <b id="joinurl">—</b> แล้วกด “เข้าร่วมเป็นผู้เล่น”</div>
+
+    <div class="status">
+      <div><span>ทีม</span> <b id="team">—</b></div>
+      <div><span>ผู้เล่น</span> <b id="pcount">0</b> / 5</div>
+      <div><span>สถานะ</span> <b id="state">—</b></div>
+      <div class="dots" id="dots"></div>
+    </div>
+
+    <div class="stack" style="margin-top:2.6vh">
+      <button id="start">▶ เริ่มเกม</button>
+      <div class="msg" id="msg"></div>
+      <button class="ghost" id="newroom">สร้างรหัสห้องใหม่</button>
+    </div>
+  </div>
+
+  <!-- 3. leaderboard -->
+  <div class="card">
+    <h3>LEADERBOARD — เรียงด้วยคะแนนต่อหัว</h3>
+    <table id="board"></table>
+    <h3 style="margin-top:3vh">ADMIN</h3>
+    <table id="aboard"></table>
+  </div>
+
+  <div class="foot">
+    <div>Meteor data: Global Meteor Network (CC BY 4.0) · globalmeteornetwork.org</div>
+    <button class="ghost" id="backup">สำรองข้อมูล</button>
+  </div>
+</div>
+
+<script src="/static/vendor/socket.io.min.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+const s = io({ transports: ['websocket', 'polling'] });
+
+let PW = sessionStorage.getItem('ht_pw') || '';
+let CODE = null;        // ห้องหลัก (ผู้เล่นเข้าห้องนี้)
+let AUTHED = false;
+
+const fmt = n => (n || 0).toLocaleString('en-US');
+function msg(t, bad) { $('msg').textContent = t || ''; $('msg').classList.toggle('bad', !!bad); }
+
+// ── เข้าสู่ระบบ ────────────────────────────────────────────
+function tryLogin(pw) { PW = pw; s.emit('admin_hello', { pw: pw }); }
+$('gatego').onclick = () => tryLogin($('gatepw').value.trim());
+$('gatepw').addEventListener('keydown', e => { if (e.key === 'Enter') $('gatego').click(); });
+
+s.on('connect', () => { if (PW) tryLogin(PW); });
+
+s.on('admin_hello', d => {
+  if (!d.ok) {
+    $('gateerr').textContent = 'รหัสผ่านไม่ถูก';
+    $('gate').classList.remove('off');
+    return;
+  }
+  AUTHED = true;
+  sessionStorage.setItem('ht_pw', PW);
+  $('gate').classList.add('off');
+  setCode(d.code);
+  msg('ห้องพร้อม — บอกผู้เล่นให้กรอก ' + d.code);
+  board();
+});
+
+function setCode(c) {
+  CODE = c;
+  $('bigcode').textContent = c;
+  $('joinurl').textContent = location.host;
+}
+
+s.on('room_created', d => { setCode(d.code); msg('รหัสห้องใหม่ ' + d.code); });
+s.on('error_msg', d => msg(d.msg, true));
+
+// ── สถานะห้อง (server ให้ admin join socket room ไว้แล้ว) ──
+const STATE_TH = { lobby:'รอเริ่ม', countdown:'นับถอยหลัง', playing:'กำลังเล่น',
+                   qte:'ลูกไฟดวงสุดท้าย', ended:'จบรอบ' };
+s.on('room', st => {
+  $('team').textContent = st.team || '—';
+  $('pcount').textContent = st.playerCount;
+  $('state').textContent = STATE_TH[st.state] || st.state;
+  $('dots').innerHTML = st.players.map(p =>
+    `<div class="dot${p.connected ? ' on' : ''}" style="background:${p.hex}"></div>`).join('');
+  $('start').disabled = ['countdown', 'playing', 'qte'].includes(st.state);
+});
+
+s.on('round_end', d => {
+  msg(`จบรอบ · ${d.team} ได้ ${fmt(d.score)} · อันดับ ${d.rank}`);
+  board();
+});
+
+// ── ปุ่มควบคุม ─────────────────────────────────────────────
+// กดเริ่ม → ห้องผู้เล่นเริ่มรอบ แล้ว admin สับไปเล่นเต็มจอในห้องของตัวเอง
+// (คนละห้อง = คะแนนไม่ปนกัน และไม่ไปแย่งอุกกาบาตของเด็ก)
+$('start').onclick   = () => { msg('กำลังเริ่ม…'); s.emit('admin_start', { code: CODE, pw: PW }); };
+s.on('admin_play', d => {
+  if (!d.code) { msg('เริ่มรอบให้ผู้เล่นแล้ว', false); return; }
+  location.href = '/play?admin=1&code=' + encodeURIComponent(d.code);
+});
+
+$('newroom').onclick = () => s.emit('create_room', { pw: PW });
+$('backup').onclick  = () => { window.location = '/api/backup?pw=' + encodeURIComponent(PW); };
+
+// ── leaderboard ────────────────────────────────────────────
+async function board() {
+  if (!AUTHED) return;
+  try {
+    const d = await (await fetch('/api/leaderboard')).json();
+    const row = r =>
+      `<tr><td>${r.rank}</td><td class="hd">${esc(r.team)}</td>` +
+      `<td>${r.stormPassed ? '✓' : '✗'} ${r.stormHits}/${r.stormTotal}</td>` +
+      `<td>${r.players} คน</td>` +
+      `<td class="sc">${fmt(r.perHead)}/คน</td>` +
+      `<td class="sc">${fmt(r.score)}</td></tr>`;
+    const empty = n => `<tr><td colspan="6" style="opacity:.35">${n}</td></tr>`;
+    $('board').innerHTML  = d.teams.length ? d.teams.map(row).join('') : empty('ยังไม่มีทีมไหนเล่นจบ');
+    $('aboard').innerHTML = d.admin.length ? d.admin.map(row).join('') : empty('—');
+  } catch (e) { /* บอร์ดล่มห้ามทำให้ทั้งหน้าพัง */ }
+}
+function esc(t) {
+  return String(t == null ? '' : t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+setInterval(board, 5000);
+</script>
+</body>
+</html>

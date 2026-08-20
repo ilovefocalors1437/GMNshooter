@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>GMNshooter — Phase A</title>
+
+<!-- Three.js + importmap ไม่มี npm ไม่มี bundler (ดู §1 ของ spec)
+     เก็บไฟล์ไว้ในเครื่องแทน CDN: หน้างานใช้ Mobile Hotspot จากคอมซึ่งอาจไม่มีเน็ตออกนอก
+     ถ้าพึ่ง CDN แล้วเน็ตไม่มา = เกมไม่ขึ้นเลย ตายคาที่ -->
+<script type="importmap">
+{
+  "imports": {
+    "three": "/static/vendor/three/three.module.js",
+    "three/addons/": "/static/vendor/three/addons/"
+  }
+}
+</script>
+
+<style>
+  :root {
+    /* ตัวอักษรใหญ่กว่าที่คิด 1.5 เท่า — จะฉายโปรเจกเตอร์ ดูจากระยะ 3 เมตร */
+    --ui-scale: 1.5;
+    --accent: #59c0ff;
+    --danger: #ff4d6d;
+    --good:   #8fffa8;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html, body {
+    width: 100%; height: 100%;
+    overflow: hidden;
+    background: #04060d;
+    color: #fff;
+    font-family: "Rajdhani", "Bahnschrift", "Segoe UI", system-ui, sans-serif;
+    font-weight: 700;
+    -webkit-font-smoothing: antialiased;
+    cursor: crosshair;
+  }
+
+  canvas { display: block; }
+
+  #scene   { position: fixed; inset: 0; z-index: 0; }
+  #compass { position: fixed; top: 0; left: 0; z-index: 3; pointer-events: none; }
+
+  #ui {
+    position: fixed; inset: 0; z-index: 4;
+    pointer-events: none;
+    user-select: none;
+  }
+
+  /* ── crosshair ───────────────────────────────── */
+  #crosshair {
+    position: absolute; left: 50%; top: 50%;
+    width: calc(46px * var(--ui-scale)); height: calc(46px * var(--ui-scale));
+    transform: translate(-50%, -50%);
+    transition: transform 60ms ease-out;
+  }
+  #crosshair.locked { transform: translate(-50%, -50%) scale(1.25); }
+  #crosshair .ring {
+    position: absolute; inset: 0;
+    border: calc(2px * var(--ui-scale)) solid rgba(255,255,255,.28);
+    border-radius: 50%;
+  }
+  #crosshair.locked .ring { border-color: var(--danger); box-shadow: 0 0 12px var(--danger); }
+  #crosshair .tick {
+    position: absolute; left: 50%; top: 50%;
+    width: calc(2px * var(--ui-scale));
+    height: calc(9px * var(--ui-scale));
+    margin: calc(-4.5px * var(--ui-scale)) 0 0 calc(-1px * var(--ui-scale));
+    background: rgba(255,255,255,.85);
+    transform-origin: center;
+  }
+  /* ขีด 4 ทิศ — child 1 คือ .ring เลยเริ่มที่ 2 */
+  #crosshair .tick:nth-child(2) { transform: rotate(0deg)   translateY(calc(-17px * var(--ui-scale))); }
+  #crosshair .tick:nth-child(3) { transform: rotate(90deg)  translateY(calc(-17px * var(--ui-scale))); }
+  #crosshair .tick:nth-child(4) { transform: rotate(180deg) translateY(calc(-17px * var(--ui-scale))); }
+  #crosshair .tick:nth-child(5) { transform: rotate(270deg) translateY(calc(-17px * var(--ui-scale))); }
+  #crosshair.locked .tick { background: var(--danger); }
+  #crosshair .dot {
+    position: absolute; left: 50%; top: 50%;
+    width: calc(3px * var(--ui-scale)); height: calc(3px * var(--ui-scale));
+    margin: calc(-1.5px * var(--ui-scale)) 0 0 calc(-1.5px * var(--ui-scale));
+    background: #fff; border-radius: 50%;
+  }
+
+  /* ── score / hp ──────────────────────────────── */
+  #topleft {
+    position: absolute;
+    left: calc(22px * var(--ui-scale)); top: calc(46px * var(--ui-scale));
+  }
+  #score {
+    font-size: calc(38px * var(--ui-scale));
+    line-height: 1;
+    letter-spacing: .04em;
+    text-shadow: 0 0 18px rgba(89,192,255,.55);
+  }
+  #score.pop { animation: pop 220ms ease-out; }
+  @keyframes pop { 0% { transform: scale(1.28); } 100% { transform: scale(1); } }
+
+  #combo {
+    margin-top: calc(4px * var(--ui-scale));
+    font-size: calc(20px * var(--ui-scale));
+    color: var(--good);
+    opacity: 0;
+    transition: opacity 160ms;
+  }
+  #combo.on { opacity: 1; }
+
+
+  /* ── flash / vignette (juice) ────────────────── */
+  #flash {
+    position: fixed; inset: 0; z-index: 5;
+    background: #fff; opacity: 0;
+    pointer-events: none;
+    mix-blend-mode: screen;
+  }
+  #damage {
+    position: fixed; inset: 0; z-index: 5;
+    pointer-events: none; opacity: 0;
+    background: radial-gradient(ellipse at center, transparent 42%, rgba(255,40,70,.85) 100%);
+  }
+
+  /* ── overlays ────────────────────────────────── */
+  .overlay {
+    position: fixed; inset: 0; z-index: 10;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    gap: calc(14px * var(--ui-scale));
+    background: rgba(4,6,13,.86);
+    backdrop-filter: blur(3px);
+    text-align: center;
+    cursor: pointer;
+  }
+  .overlay.hidden { display: none; }
+  .overlay h1 {
+    font-size: calc(56px * var(--ui-scale));
+    letter-spacing: .1em;
+    text-shadow: 0 0 30px rgba(89,192,255,.6);
+  }
+  .overlay p { font-size: calc(19px * var(--ui-scale)); opacity: .8; line-height: 1.7; }
+  .overlay .big { font-size: calc(72px * var(--ui-scale)); color: var(--accent); }
+  .overlay .key {
+    display: inline-block;
+    padding: calc(3px * var(--ui-scale)) calc(11px * var(--ui-scale));
+    border: calc(2px * var(--ui-scale)) solid rgba(255,255,255,.35);
+    border-radius: calc(6px * var(--ui-scale));
+    margin: 0 calc(3px * var(--ui-scale));
+  }
+  .overlay .cta {
+    margin-top: calc(10px * var(--ui-scale));
+    font-size: calc(26px * var(--ui-scale));
+    color: var(--accent);
+    animation: blink 1.1s steps(2, start) infinite;
+  }
+  @keyframes blink { 50% { opacity: .25; } }
+
+  /* ── Contact log — ข้อมูลจริงจาก GMN ────────────── */
+  #contact {
+    position: absolute;
+    right: calc(16px * var(--ui-scale)); top: calc(46px * var(--ui-scale));
+    width: calc(268px * var(--ui-scale));
+    font-weight: 400;
+  }
+  #contact h2 {
+    font-size: calc(13px * var(--ui-scale)); font-weight: 700;
+    letter-spacing: .26em; opacity: .55; margin-bottom: calc(6px * var(--ui-scale));
+    border-bottom: 1px solid rgba(255,255,255,.18);
+    padding-bottom: calc(4px * var(--ui-scale));
+  }
+  /* การ์ด GMN — ต้องอ่านออกจากระยะไกล ตัวใหญ่กว่าที่คิด */
+  .cd {
+    background: rgba(8,14,28,.72);
+    border-left: calc(3px * var(--ui-scale)) solid var(--accent);
+    border-radius: calc(4px * var(--ui-scale));
+    padding: calc(8px * var(--ui-scale)) calc(10px * var(--ui-scale));
+    margin-bottom: calc(7px * var(--ui-scale));
+    font-size: calc(13px * var(--ui-scale)); line-height: 1.5;
+  }
+  .cd.miss { border-left-color: var(--danger); opacity: .72; }
+  .cd.fresh { animation: cdin 300ms ease-out; }
+  @keyframes cdin { from { opacity: 0; transform: translateX(16px); } }
+
+  .cd-grp { font-weight: 700; color: #cfe6ff;
+            font-size: calc(15px * var(--ui-scale)); margin-bottom: calc(3px * var(--ui-scale)); }
+  .cd-row { display: flex; justify-content: space-between; gap: calc(8px * var(--ui-scale)); }
+  .cd-row span { opacity: .6; }
+  .cd-row b { font-weight: 700; text-align: right; }
+  .cd-row b i { font-style: normal; opacity: .75;
+                font-size: calc(11px * var(--ui-scale)); }
+  .cd-cam { margin-top: calc(4px * var(--ui-scale)); color: var(--good);
+            font-weight: 700; }
+  .cd-miss { margin-top: calc(3px * var(--ui-scale)); color: var(--danger); font-weight: 700; }
+
+  #gmncredit {
+    position: absolute; right: calc(16px * var(--ui-scale));
+    bottom: calc(14px * var(--ui-scale));
+    font-size: calc(11px * var(--ui-scale)); font-weight: 400;
+    opacity: .45; text-align: right; line-height: 1.5;
+  }
+
+  #err {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 20;
+    background: #b0121a; color: #fff;
+    padding: 12px 16px; font-size: 14px; font-family: ui-monospace, Consolas, monospace;
+    white-space: pre-wrap; display: none;
+    max-height: 22vh; overflow-y: auto;   /* อย่าให้บังหลอด HP ทั้งจอ */
+  }
+</style>
+</head>
+<body>
+
+<div id="scene"></div>
+<canvas id="compass"></canvas>
+
+<div id="ui">
+  <div id="crosshair">
+    <div class="ring"></div>
+    <div class="tick"></div><div class="tick"></div>
+    <div class="tick"></div><div class="tick"></div>
+    <div class="dot"></div>
+  </div>
+
+  <div id="topleft">
+    <div id="score">0</div>
+    <div id="combo">COMBO ×1</div>
+  </div>
+
+  <div id="contact">
+    <h2>CONTACT LOG</h2>
+    <div id="contactlist"></div>
+  </div>
+
+  <div id="gmncredit">
+    Meteor data: Global Meteor Network (CC BY 4.0)<br>
+    <span id="gmnstat">—</span>
+  </div>
+</div>
+
+<div id="flash"></div>
+<div id="damage"></div>
+
+<!-- ต้องมี user gesture ก่อน ไม่งั้น AudioContext โดน browser block -->
+<div id="start" class="overlay">
+  <h1>GMN<span style="color:var(--accent)">shooter</span></h1>
+  <p>
+    เมาส์ = เล็ง &nbsp;·&nbsp; คลิก = ยิง<br>
+    <span class="key">SPACE</span> = หันกลับกลางซุ้ม &nbsp;·&nbsp; <span class="key">R</span> = เริ่มใหม่
+  </p>
+  <div class="cta">คลิกเพื่อเริ่ม</div>
+  <p style="font-size:calc(14px * var(--ui-scale));opacity:.5;font-weight:400;margin-top:calc(18px * var(--ui-scale))">
+    Meteor data: Global Meteor Network (CC BY 4.0)<br>
+    <span id="gmnstat2">กำลังตรวจฐานข้อมูล…</span>
+  </p>
+</div>
+
+<div id="gameover" class="overlay hidden">
+  <h1 style="color:var(--danger)">CITY DOWN</h1>
+  <p>คะแนน</p>
+  <div class="big" id="finalscore">0</div>
+  <p id="finalstats" style="opacity:.7"></p>
+  <div class="cta">กด <span class="key">R</span> เพื่อเล่นอีกรอบ</div>
+</div>
+
+<div id="err"></div>
+
+<script type="module">
+  // ดัก error ตั้งแต่ก่อนโหลด main.js — ไม่งั้นจอดำเงียบๆ แล้วเดาไม่ถูก
+  //
+  // *** ต้องกรองเฉพาะ error ของเราเอง ***
+  // handler นี้ดักทุกอย่างที่เกิดในหน้า รวมสคริปต์ของ browser extension ด้วย
+  // (เจอจริง: extension ยิง "Cannot read properties of undefined (reading 'M_ID')"
+  //  รัวๆ จนแถบแดงบังหลอด HP ทั้งที่เกมไม่ได้พังเลย)
+  const errBox = document.getElementById('err');
+  const seen = new Map();
+  const show = (m) => {
+    const n = (seen.get(m) || 0) + 1;
+    seen.set(m, n);
+    errBox.style.display = 'block';
+    errBox.textContent = [...seen].map(([k, c]) => (c > 1 ? `${k}  ×${c}` : k)).join('\n');
+  };
+  const isOurs = (src) => typeof src === 'string' && src.startsWith(location.origin);
+
+  window.addEventListener('error', e => {
+    if (e.filename && !isOurs(e.filename)) return;      // ของ extension ไม่ต้องโชว์
+    show('ERROR: ' + (e.message || e.error));
+  });
+  window.addEventListener('unhandledrejection', e => {
+    const stack = e.reason?.stack;
+    // ไม่มี stack หรือ stack ไม่ได้ชี้มาที่ไฟล์เรา = ไม่ใช่ของเรา
+    if (!stack || !stack.includes(location.origin)) {
+      console.warn('[ไม่ใช่ของเกม]', e.reason);
+      return;
+    }
+    show('PROMISE: ' + (e.reason?.message || e.reason));
+  });
+
+  // เปิดไฟล์ตรงๆ (double-click) → ES module โดน CORS บล็อก ขึ้น error ที่อ่านไม่รู้เรื่อง
+  // ดักไว้ก่อนเลย แล้วบอกวิธีแก้ตรงๆ แทนที่จะให้ไปงงกับ "Failed to fetch dynamically imported module"
+  if (location.protocol === 'file:') {
+    document.getElementById('start').innerHTML =
+      '<h1 style="color:var(--danger)">เปิดผิดวิธี</h1>' +
+      '<p>ES module เปิดจากไฟล์ตรงๆ ไม่ได้ ต้องผ่าน <b>http://</b></p>' +
+      '<p style="opacity:1">เปิด terminal แล้วรัน:</p>' +
+      '<p><code style="font-size:calc(17px * var(--ui-scale));background:#000;' +
+      'padding:calc(8px * var(--ui-scale)) calc(14px * var(--ui-scale));' +
+      'border:calc(2px * var(--ui-scale)) solid var(--accent);border-radius:calc(6px * var(--ui-scale));' +
+      'display:inline-block;color:var(--accent)">python serve.py</code></p>' +
+      '<p>แล้วเปิด <b style="color:var(--accent)">http://localhost:8000</b></p>' +
+      '<p style="font-size:calc(15px * var(--ui-scale));opacity:.55">' +
+      '(serve.py chdir ให้เอง เรียกจากโฟลเดอร์ไหนก็ได้)</p>';
+    document.getElementById('start').style.cursor = 'default';
+  } else {
+    import('./src/main.js').catch(e => show('LOAD main.js: ' + (e?.message || e)));
+  }
+</script>
+</body>
+</html>

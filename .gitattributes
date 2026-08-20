@@ -1,0 +1,9 @@
+# บังคับ LF ใน repo — Procfile/สคริปต์ที่ติด CRLF ไปแล้วพังบน Linux hoster
+# (host อ่าน "$PORT\r" เป็นชื่อพอร์ตแล้ว bind ไม่ติด หาสาเหตุยากมาก)
+* text=auto eol=lf
+
+*.glb binary
+*.gz  binary
+*.db  binary
+*.png binary
+*.jpg binary

@@ -1,0 +1,106 @@
+# GMNshooter
+
+เกมยิงอุกกาบาตสำหรับบูธงานโรงเรียน — **อุกกาบาตทุกดวงในเกมเป็นของจริง**
+มาจาก [Global Meteor Network](https://globalmeteornetwork.org) 472,388 ดวง
+กล้องราคาถูกกับ Raspberry Pi บนหลังคาบ้านคนธรรมดา ~1,000 ตัวใน 40 ประเทศ
+
+ทิศ ความเร็ว ความสว่าง ระยะเวลาที่ไหม้ และความสูงที่ไหม้หมด มาจากข้อมูลจริงทั้งหมด
+แล้วเอาเรดิแอนต์จริงมาวางบนฟ้ากรุงเทพ ณ เวลาที่เล่น
+**ไม่มีดวงไหนตกถึงพื้น** — ทั้งฐานข้อมูล ดวงที่ลงต่ำที่สุดยังไหม้หมดที่ 32 กม.
+
+---
+
+## รันบนเครื่องตัวเอง
+
+```bash
+pip install -r requirements.txt
+python app.py
+```
+
+ครั้งแรกจะแตก `data/meteors.db.gz` → `data/meteors.db` ให้เอง (~0.3 วิ) แล้วพิมพ์ URL ออกมา
+
+| ใคร | เปิดที่ |
+|---|---|
+| ผู้ดูแล | `http://localhost:5000/admin` |
+| ผู้เล่น | `http://<ip ที่ขึ้นบนจอ>:5000/` (ต่อ WiFi วงเดียวกัน) |
+
+รหัสผู้ดูแลอยู่ที่ `ADMIN_PASSWORD` ใน `game/config.py`
+
+## วิธีเล่น
+
+1. ผู้ดูแลเปิด `/admin` กรอกรหัส แล้วบอกรหัสห้อง (`HT###`) ให้ผู้เล่น
+2. ผู้เล่นเปิดหน้าเว็บ → **เข้าร่วมเป็นผู้เล่น** → กรอกรหัสห้อง (ทีมละ 1–5 คน)
+   คนแรกที่กดยืนยันเป็นคนตั้งชื่อทีม
+3. ผู้ดูแลกด **เริ่มเกม** → ห้องผู้เล่นเริ่มรอบ และผู้ดูแลถูกสับไปเล่นเต็มจอในห้องของตัวเอง
+   (คนละห้อง คะแนนลงบอร์ด ADMIN ไม่ปนกับทีมเด็ก และไม่ไปแย่งอุกกาบาต)
+
+โครงรอบ: `0:00–0:50 ปกติ` → `0:50–1:15 ศึกเดือด` → `12 วิ ลูกไฟดวงสุดท้าย (QTE)` → สรุปผล
+จบแล้วห้องกลับ lobby เองใน 25 วิ รับกลุ่มถัดไปได้เลย
+
+---
+
+## Deploy
+
+รองรับ hoster ที่อ่าน `Procfile` (Render / Railway / Heroku / Fly)
+
+```
+web: gunicorn --worker-class gthread --workers 1 --threads 100 --timeout 120 --bind 0.0.0.0:$PORT app:app
+```
+
+**`--workers 1` ห้ามเพิ่ม** — ห้อง ผู้เล่น และตารางอุกกาบาตทั้งหมดเก็บใน RAM ของ process
+มีสอง worker เมื่อไร เด็กที่ต่อเข้า worker คนละตัวจะกลายเป็นคนละห้องทันที
+อยากรับคนเยอะขึ้นให้เพิ่ม `--threads` ไม่ใช่ `--workers`
+
+ถ้า gunicorn มีปัญหาบน hoster นั้น ใช้บรรทัดนี้แทนได้ (Werkzeug ตรงๆ พอสำหรับบูธ ≤6 คน):
+
+```
+web: python app.py
+```
+
+### ตัวแปรสภาพแวดล้อม
+
+| ตัวแปร | ค่าเริ่มต้น | ใช้ทำอะไร |
+|---|---|---|
+| `PORT` | 5000 | hoster ส่งมาให้เอง ไม่ต้องตั้ง |
+| `SPACEHT_PUBLIC_URL` | — | URL สาธารณะ เผื่อใช้ทำ QR |
+
+### เรื่องที่ต้องรู้ก่อน deploy
+
+- **ฐานข้อมูล** git เก็บเฉพาะ `data/meteors.db.gz` (28 MB) ตัวเต็ม 60 MB
+  ถูกแตกออกมาเองตอนบูตครั้งแรก ไม่ต้องมี build step
+- **leaderboard หายทุก restart** hoster ฟรีส่วนใหญ่ใช้ ephemeral filesystem
+  ระหว่างงานให้กด **สำรองข้อมูล** บนแผงผู้ดูแลเป็นระยะ (โหลด JSON เก็บไว้เอง)
+- **WebSocket** gunicorn gthread ไม่รองรับ ws — socket.io จะถอยไปใช้ long-polling เอง
+  ยังเล่นได้ปกติเพราะตารางอุกกาบาตส่งครั้งเดียวตอนเริ่มรอบ (~30 KB) ไม่ได้ส่งทุกเฟรม
+
+---
+
+## โครงสร้าง
+
+```
+app.py              Flask + SocketIO — ไม่มี game loop มีแค่ จัดตาราง / ตัดสินว่าใครยิงโดนก่อน / เก็บคะแนน
+game/config.py      ตัวเลขฝั่ง server ทุกตัว
+game/rooms.py       ห้อง HT### · ตารางอุกกาบาตทั้งรอบ · ศึกเดือด · QTE
+game/db.py          สุ่มหยิบดวงจริงจาก SQLite แล้วแปลง RA/Dec → ทิศบนฟ้ากรุงเทพ
+game/board.py       leaderboard (SQLite + สำเนา JSON) เรียงด้วยคะแนนต่อหัว
+src/                เกมฝั่ง client (Three.js, ไม่ใช้ bundler)
+src/config.js       ตัวเลขฝั่ง client ทุกตัว
+templates/play.html หน้าเดียวจบตั้งแต่หน้าแรกยันสรุปผล
+templates/admin.html แผงผู้ดูแล — รหัสห้อง · เริ่มเกม · leaderboard
+tools/bake_gmn.py   traj_summary ของ GMN → meteors.db
+```
+
+กติกาที่ห้ามแตะอยู่ใน [CLAUDE.md](CLAUDE.md)
+
+## สร้าง meteors.db ใหม่เอง
+
+โหลด `traj_summary_*.txt` จาก globalmeteornetwork.org แล้ว
+
+```bash
+python tools/bake_gmn.py data/traj_summary_yearly_2026.txt --db data/meteors.db
+gzip -9 -k data/meteors.db      # อัปเดตตัวที่อยู่ใน git
+```
+
+---
+
+Meteor data: Global Meteor Network (CC BY 4.0)

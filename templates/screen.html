@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GMNshooter — จอใหญ่</title>
+
+<!-- three.js เก็บไว้ในเครื่อง ไม่ใช่ CDN
+     เหตุผล: หน้างานใช้ Mobile Hotspot จากคอม ซึ่งอาจไม่มีเน็ตออกนอก
+     ถ้าพึ่ง CDN แล้วเน็ตไม่มา = เกมไม่ขึ้นเลยทั้งจอ ตายคาที่
+     ยังไม่ใช้ npm/bundler อยู่ดี — แค่ไฟล์ .js วางไว้เฉยๆ -->
+<script type="importmap">
+{
+  "imports": {
+    "three": "/static/vendor/three/three.module.js",
+    "three/addons/": "/static/vendor/three/addons/"
+  }
+}
+</script>
+
+<style>
+  :root { --ui-scale: 1.5; --accent:#59c0ff; --danger:#ff4d6d; --good:#8fffa8; }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html, body { width:100%; height:100%; overflow:hidden; background:#04060d; color:#fff;
+    font-family:"Bahnschrift","Segoe UI",system-ui,sans-serif; font-weight:700; cursor:none; }
+  canvas { display:block; }
+
+  /* ══ Lobby ══════════════════════════════════════════ */
+  #lobby { position:fixed; inset:0; z-index:20; display:flex;
+           flex-direction:column; align-items:center; justify-content:center; gap:2.2vh;
+           background:radial-gradient(ellipse at 50% 30%, #0d1730 0%, #04060d 70%); }
+  #lobby.hidden { display:none; }
+  #lobby h1 { font-size:7vh; letter-spacing:.1em; text-shadow:0 0 40px rgba(89,192,255,.5); }
+  #lobby h1 span { color:var(--accent); }
+  #lobby .lead { font-size:2.6vh; opacity:.8; }
+
+  .qrwrap { background:#fff; padding:1.6vh; border-radius:1.4vh; line-height:0;
+            box-shadow:0 0 60px rgba(89,192,255,.35); }
+  .qrwrap img { width:30vh; height:30vh; display:block; image-rendering:pixelated; }
+
+  .urlline { font-family:ui-monospace,Consolas,monospace; font-size:2.4vh;
+             color:var(--accent); letter-spacing:.02em; }
+  .codeline { font-size:2.2vh; opacity:.6; }
+  .codeline b { font-size:3vh; color:#fff; letter-spacing:.35em; opacity:1; }
+
+  .slots { display:flex; gap:2vh; margin-top:1vh; }
+  .card { width:20vh; padding:2vh 1vh; border-radius:1.2vh; text-align:center;
+          border:.4vh solid rgba(255,255,255,.15); background:rgba(255,255,255,.03);
+          transition:all 220ms; }
+  .card .pn { font-size:1.9vh; letter-spacing:.25em; opacity:.5; }
+  .card .nm { font-size:4.4vh; margin-top:.4vh; opacity:.35; }
+  .card .st { font-size:1.9vh; margin-top:.6vh; opacity:.45; }
+  .card.on { background:rgba(255,255,255,.10); transform:translateY(-.8vh); }
+  .card.on .nm, .card.on .st { opacity:1; }
+  .card.off { opacity:.55; }
+
+  .credit { position:fixed; bottom:1.6vh; left:0; right:0; text-align:center;
+            font-size:1.7vh; opacity:.45; font-weight:400; }
+
+  #err { position:fixed; left:0; right:0; bottom:0; z-index:40; background:#b0121a;
+         padding:12px 16px; font-size:14px; font-family:ui-monospace,Consolas,monospace;
+         white-space:pre-wrap; display:none; max-height:22vh; overflow-y:auto; }
+</style>
+</head>
+<body>
+
+<div id="lobby">
+  <h1>SPACE<span>HT</span></h1>
+  <div class="lead">สแกนเพื่อเข้าเล่น — รับได้ 3 คน</div>
+
+  <div class="qrwrap"><img id="qr" src="/qr.png" alt="QR"></div>
+  <div class="urlline" id="url">—</div>
+  <div class="codeline">หรือพิมพ์ code &nbsp; <b id="code">----</b></div>
+
+  <div class="slots" id="slots"></div>
+
+  <div class="credit">Meteor data: Global Meteor Network (CC BY 4.0) · Map data: OpenStreetMap contributors (ODbL)</div>
+</div>
+
+<div id="err"></div>
+
+<script src="/static/vendor/socket.io.min.js"></script>
+<script>
+(function () {
+  var errBox = document.getElementById('err');
+  function fail(m) { errBox.style.display = 'block'; errBox.textContent += m + '\n'; }
+  window.addEventListener('error', function (e) {
+    if (e.filename && e.filename.indexOf(location.origin) !== 0) return;
+    fail('ERROR: ' + e.message);
+  });
+
+  var socket = io({ transports: ['websocket', 'polling'] });
+  window.__sock = socket;
+
+  socket.on('connect', function () { socket.emit('screen_hello', {}); });
+
+  socket.on('lobby', function (d) {
+    document.getElementById('url').textContent = d.url;
+    document.getElementById('code').textContent = d.code;
+    // โหลด QR ใหม่เผื่อ IP เปลี่ยน (เปิด hotspot ทีหลัง)
+    document.getElementById('qr').src = '/qr.png?t=' + Date.now();
+  });
+
+  socket.on('roster', function (st) {
+    var wrap = document.getElementById('slots');
+    wrap.innerHTML = '';
+    st.slots.forEach(function (s) {
+      var d = document.createElement('div');
+      d.className = 'card' + (s.taken ? (s.connected ? ' on' : ' on off') : '');
+      if (s.taken) { d.style.borderColor = s.hex; d.style.boxShadow = '0 0 3vh ' + s.hex + '55'; }
+      d.innerHTML =
+        '<div class="pn">PLAYER ' + s.slot + '</div>' +
+        '<div class="nm" style="color:' + s.hex + '">' + s.name + '</div>' +
+        '<div class="st">' + (s.taken ? (s.connected ? 'พร้อม' : 'หลุด… รออยู่') : 'ว่าง') + '</div>';
+      wrap.appendChild(d);
+    });
+    window.__roster = st;
+  });
+
+  // กด R = เปลี่ยนกลุ่มเด็ก ไล่ทุกคนออกให้ slot ว่างทันที
+  // (ปกติ slot ถูกจองไว้ 90 วิ กันเด็ก refresh แล้วหลุด ซึ่งนานไปถ้ามีคิวต่อแถว)
+  document.addEventListener('keydown', function (e) {
+    if (e.code === 'KeyR') socket.emit('reset_room', {});
+  });
+
+  socket.on('connect_error', function (e) { fail('connect_error: ' + (e && e.message)); });
+})();
+</script>
+</body>
+</html>

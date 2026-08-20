@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>GMNshooter — Controller</title>
+<style>
+  /* มือถือต้องโง่สนิท: ไม่มี game logic ไม่มี asset ไม่มี canvas เกม
+     ส่งแค่ {y,p} กับ fire — ที่เหลือจอใหญ่กับ server จัดการ            */
+  * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html, body {
+    height:100%; width:100%; overflow:hidden;
+    background:#05070d; color:#fff;
+    font-family:"Bahnschrift","Segoe UI",system-ui,sans-serif; font-weight:700;
+    touch-action:none; user-select:none; -webkit-user-select:none; overscroll-behavior:none;
+  }
+  .screen { position:fixed; inset:0; display:none; flex-direction:column;
+            align-items:center; justify-content:center; text-align:center; padding:24px; gap:16px; }
+  .screen.on { display:flex; }
+
+  #connecting .dot { font-size:44px; letter-spacing:.2em; animation:blink 1s steps(2,start) infinite; }
+  @keyframes blink { 50% { opacity:.2 } }
+
+  #full h1 { font-size:11vw; color:#ff4d6d; }
+  #full p { font-size:5vw; opacity:.8; margin-top:10px; line-height:1.6; }
+
+  /* ── หน้าเล่นจริง ─────────────────────────────────── */
+  #play { display:none; position:fixed; inset:0; flex-direction:column; }
+  #play.on { display:flex; }
+
+  /* แถบบนบอกว่ากูสีอะไร — เด็กเงยหน้าดูจอใหญ่แล้วต้องรู้ว่าอันไหนของตัวเอง */
+  #bar { flex:0 0 auto; padding:14px 16px calc(10px + env(safe-area-inset-top));
+         display:flex; align-items:center; justify-content:space-between;
+         font-size:5vw; color:#0a0d16; }
+  #bar .who { letter-spacing:.06em; }
+  #bar .st { font-size:3.4vw; opacity:.65; }
+
+  /* พื้นที่ลากนิ้ว = เล็ง */
+  #pad { flex:1 1 auto; position:relative; background:#080b14;
+         display:flex; align-items:center; justify-content:center; }
+  #pad .hint { font-size:4.6vw; opacity:.28; line-height:1.8; pointer-events:none; }
+
+  /* แถบบอกว่าตอนนี้หันไปทางไหนในซุ้ม 180° — feedback อย่างเดียว ไม่ใช่ game logic */
+  #yawbar { position:absolute; left:5%; right:5%; top:11%; height:8px;
+            background:rgba(255,255,255,.10); border-radius:4px; pointer-events:none; }
+  #yawdot { position:absolute; top:-6px; width:20px; height:20px; margin-left:-10px;
+            border-radius:50%; left:50%; transition:none; }
+  #yawbar .mid { position:absolute; left:50%; top:-5px; width:2px; height:18px;
+                 margin-left:-1px; background:rgba(255,255,255,.35); }
+  #pitchbar { position:absolute; right:6%; top:22%; bottom:22%; width:8px;
+              background:rgba(255,255,255,.10); border-radius:4px; pointer-events:none; }
+  #pitchdot { position:absolute; left:-6px; width:20px; height:20px; margin-top:-10px;
+              border-radius:50%; bottom:0; }
+
+  /* ปุ่มยิง ใหญ่ นิ้วโป้งเอื้อมถึง */
+  #fire { flex:0 0 auto; height:26vh; margin:0 4vw calc(4vw + env(safe-area-inset-bottom));
+          border-radius:5vw; display:flex; align-items:center; justify-content:center;
+          font-size:9vw; letter-spacing:.14em; color:#0a0d16;
+          box-shadow:0 .8vh 0 rgba(0,0,0,.45); transition:transform 60ms, box-shadow 60ms; }
+  #fire.down { transform:translateY(.8vh); box-shadow:0 0 0 rgba(0,0,0,.45); }
+
+  .err { position:fixed; left:0; right:0; bottom:0; background:#b0121a; font-size:12px;
+         padding:8px 10px; font-family:ui-monospace,monospace; display:none; white-space:pre-wrap; }
+</style>
+</head>
+<body>
+
+<div id="connecting" class="screen on">
+  <div class="dot">• • •</div>
+  <div style="font-size:5vw;opacity:.75">กำลังเชื่อมต่อ</div>
+</div>
+
+<div id="full" class="screen">
+  <h1>เต็มแล้ว</h1>
+  <p>ตอนนี้มีผู้เล่นครบ 3 คน<br>รอรอบถัดไปนะ</p>
+</div>
+
+<div id="play">
+  <div id="bar">
+    <div class="who" id="who">PLAYER 1 · แดง</div>
+    <div class="st" id="st">พร้อม</div>
+  </div>
+  <div id="pad">
+    <div id="yawbar"><div class="mid"></div><div id="yawdot"></div></div>
+    <div id="pitchbar"><div id="pitchdot"></div></div>
+    <div class="hint">ลากนิ้ว = เล็ง<br>แตะสองที = หันกลับกลาง</div>
+  </div>
+  <div id="fire">ยิง</div>
+</div>
+
+<div class="err" id="err"></div>
+
+<script src="/static/vendor/socket.io.min.js"></script>
+<script src="/static/vendor/NoSleep.min.js"></script>
+<script>
+(function () {
+  var errBox = document.getElementById('err');
+  function fail(m) { errBox.style.display = 'block'; errBox.textContent += m + '\n'; }
+  window.addEventListener('error', function (e) { fail('ERR: ' + e.message); });
+
+  function show(id) {
+    ['connecting', 'full'].forEach(function (i) { document.getElementById(i).classList.remove('on'); });
+    document.getElementById('play').classList.remove('on');
+    document.getElementById(id).classList.add('on');
+  }
+
+  // ── กันจอดับ (http:// ไม่ใช่ secure context → Wake Lock API ใช้ไม่ได้) ──
+  var noSleep = null, sleepArmed = false;
+  try { noSleep = new NoSleep(); } catch (e) {}
+  function armNoSleep() {
+    if (sleepArmed || !noSleep) return;
+    sleepArmed = true;
+    try { noSleep.enable(); } catch (e) {}
+  }
+  document.addEventListener('touchend', armNoSleep);
+  document.addEventListener('click', armNoSleep);
+
+  // ── token: slot ผูกกับ token ไม่ใช่กับ connection ──
+  var KEY = 'spaceht_token';
+  function getToken() { try { return sessionStorage.getItem(KEY); } catch (e) { return null; } }
+  function setToken(t) { try { sessionStorage.setItem(KEY, t); } catch (e) {} }
+
+  var socket = io({ transports: ['websocket', 'polling'] });
+  var me = null;
+
+  // ══ สถานะการเล็ง — เก็บที่มือถือ แล้วส่ง "มุมสัมบูรณ์" ══
+  // ห้ามส่ง delta: ถ้า packet หาย มุมจะเพี้ยนถาวรแก้ไม่ได้
+  // ส่งค่าสัมบูรณ์แล้ว packet ถัดไปแก้ตัวเองให้อัตโนมัติ
+  var DEG = Math.PI / 180;
+  var YAW_LIMIT = 90 * DEG, PITCH_MIN = 0, PITCH_MAX = 80 * DEG;
+  var yaw = 0, pitch = 14 * DEG;
+  var SENS_YAW = 0, SENS_PITCH = 0;
+
+  function calcSens() {
+    // ลากเต็มความกว้างจอ = กวาด 150° / เต็มความสูง pad = 70°
+    var pad = document.getElementById('pad').getBoundingClientRect();
+    SENS_YAW = (150 * DEG) / Math.max(1, pad.width);
+    SENS_PITCH = (70 * DEG) / Math.max(1, pad.height);
+  }
+  window.addEventListener('resize', calcSens);
+
+  function clamp(v, a, b) { return v < a ? a : v > b ? b : v; }
+
+  function paint() {
+    var yd = document.getElementById('yawdot');
+    var pd = document.getElementById('pitchdot');
+    // yaw บวก = ซ้าย → จุดต้องไปทางซ้ายของแถบ
+    yd.style.left = (50 - (yaw / YAW_LIMIT) * 50) + '%';
+    pd.style.bottom = ((pitch - PITCH_MIN) / (PITCH_MAX - PITCH_MIN) * 100) + '%';
+  }
+
+  // ส่ง ~60Hz แต่ส่งเฉพาะตอนที่ขยับจริง — WiFi ห่วยจะได้ไม่ต้องแบก packet เปล่า
+  var lastSent = 0, dirty = false;
+  function pump() {
+    var now = performance.now();
+    if (dirty && now - lastSent >= 16) {
+      lastSent = now; dirty = false;
+      socket.emit('aim', { y: +yaw.toFixed(4), p: +pitch.toFixed(4) });
+    }
+    requestAnimationFrame(pump);
+  }
+
+  function setAim(y, p) {
+    yaw = clamp(y, -YAW_LIMIT, YAW_LIMIT);
+    pitch = clamp(p, PITCH_MIN, PITCH_MAX);
+    dirty = true;
+    paint();
+  }
+
+  // ══ touch ══
+  var pad = document.getElementById('pad');
+  var drag = null, lastTapAt = 0, TAP_MS = 220, TAP_PX = 14;
+
+  pad.addEventListener('touchstart', function (e) {
+    var t = e.changedTouches[0];
+    drag = { id: t.identifier, x: t.clientX, y: t.clientY, t: performance.now(), moved: 0 };
+    e.preventDefault();
+  }, { passive: false });
+
+  pad.addEventListener('touchmove', function (e) {
+    if (!drag) return;
+    for (var i = 0; i < e.changedTouches.length; i++) {
+      var t = e.changedTouches[i];
+      if (t.identifier !== drag.id) continue;
+      var dx = t.clientX - drag.x, dy = t.clientY - drag.y;
+      drag.moved += Math.abs(dx) + Math.abs(dy);
+      drag.x = t.clientX; drag.y = t.clientY;
+      // ลากขวา = หันขวา = yaw ลด (yaw บวก = ซ้าย) / ลากขึ้น = เงยขึ้น
+      setAim(yaw - dx * SENS_YAW, pitch - dy * SENS_PITCH);
+    }
+    e.preventDefault();
+  }, { passive: false });
+
+  pad.addEventListener('touchend', function (e) {
+    if (!drag) return;
+    var dur = performance.now() - drag.t;
+    var wasTap = dur < TAP_MS && drag.moved < TAP_PX;
+    drag = null;
+    if (!wasTap) return;
+
+    var now = performance.now();
+    if (now - lastTapAt < 300) {        // แตะสองที = หันกลับกลางซุ้ม
+      lastTapAt = 0;
+      setAim(0, 14 * DEG);
+    } else {
+      lastTapAt = now;
+      doFire();                          // แตะทีเดียว = ยิง
+    }
+    e.preventDefault();
+  }, { passive: false });
+
+  // ══ ปุ่มยิง — กดค้างได้ ══
+  var fireBtn = document.getElementById('fire');
+  var holding = false;
+  function doFire() {
+    socket.emit('fire', { y: +yaw.toFixed(4), p: +pitch.toFixed(4), t: Date.now() });
+    if (navigator.vibrate) { try { navigator.vibrate(12); } catch (e) {} }
+  }
+  function holdLoop() {
+    if (!holding) return;
+    doFire();
+    setTimeout(holdLoop, 190);           // ตรงกับ cooldown ฝั่ง server
+  }
+  fireBtn.addEventListener('touchstart', function (e) {
+    holding = true; fireBtn.classList.add('down'); holdLoop();
+    e.preventDefault();
+  }, { passive: false });
+  ['touchend', 'touchcancel'].forEach(function (ev) {
+    fireBtn.addEventListener(ev, function (e) {
+      holding = false; fireBtn.classList.remove('down'); e.preventDefault();
+    }, { passive: false });
+  });
+
+  // ══ socket ══
+  socket.on('connect', function () { socket.emit('join', { token: getToken() }); });
+
+  socket.on('joined', function (d) {
+    me = d;
+    setToken(d.token);
+    document.getElementById('who').textContent = 'PLAYER ' + d.slot + ' · ' + d.name;
+    document.getElementById('st').textContent = d.rejoin ? 'กลับมาแล้ว' : 'พร้อม';
+    document.getElementById('bar').style.background = d.hex;
+    document.getElementById('fire').style.background = d.hex;
+    document.getElementById('yawdot').style.background = d.hex;
+    document.getElementById('pitchdot').style.background = d.hex;
+    document.getElementById('play').classList.add('on');
+    document.getElementById('connecting').classList.remove('on');
+    document.getElementById('full').classList.remove('on');
+    calcSens(); paint(); dirty = true;
+    armNoSleep();
+  });
+
+  socket.on('full', function () { show('full'); });
+
+  socket.on('kicked', function () {
+    try { sessionStorage.removeItem(KEY); } catch (e) {}
+    me = null; show('connecting');
+    socket.emit('join', { token: null });
+  });
+
+  socket.on('disconnect', function () {
+    document.getElementById('st').textContent = 'หลุด… ต่อใหม่';
+  });
+  socket.on('connect_error', function (e) { fail('connect_error: ' + (e && e.message)); });
+
+  calcSens();
+  requestAnimationFrame(pump);
+})();
+</script>
+</body>
+</html>
