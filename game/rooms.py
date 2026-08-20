@@ -249,9 +249,23 @@ class Room:
 
     def _build_qte(self, mid, rng):
         """ดวงจริงที่ mag สว่างระดับ fireball และอยู่กลางซุ้ม — ทุกคนต้องเห็นพร้อมกัน"""
-        where = f"mag IS NOT NULL AND mag <= {C.QTE_MAG_MAX}"
-        ev = gmn_db.pick(1, yaw_limit_deg=C.QTE_YAW_LIMIT_DEG, where=where)
-        if not ev:      # คิวว่าง = ไม่มี QTE รอบนี้ — ห้ามแต่งดวงขึ้นมาเอง (CLAUDE.md)
+        # ดวงสว่างระดับ fireball มีแค่ 7,694 จาก 472,388 ดวง (1.6%)
+        # บวกกับเงื่อนไข "ต้องอยู่กลางซุ้มตอนนี้" → วัดจริงแล้วพลาด 2 ใน 10 รอบ
+        # รอบที่พลาดคือจบเกมดื้อๆ ไม่มีฉากปิดท้าย — หน้างานจริงยอมไม่ได้
+        # เลยค่อยๆ ขยายเงื่อนไขแทน — ยังเป็นดวงจริงทุกขั้น ไม่ได้แต่งขึ้นมาสักดวง
+        bright = f"mag IS NOT NULL AND mag <= {C.QTE_MAG_MAX}"
+        plans = [
+            (bright, C.QTE_YAW_LIMIT_DEG),          # สว่างมาก + อยู่กลางซุ้ม
+            (bright, C.YAW_LIMIT_DEG),              # สว่างมาก ที่ไหนในซุ้มก็ได้
+            ("mag IS NOT NULL AND mag <= 0", C.YAW_LIMIT_DEG),
+            ("1=1", C.YAW_LIMIT_DEG),               # ท้ายสุด ดวงไหนก็ได้ ขอให้มีฉากปิดท้าย
+        ]
+        ev = None
+        for where, lim in plans:
+            ev = gmn_db.pick(1, yaw_limit_deg=lim, where=where, max_tries_each=200)
+            if ev:
+                break
+        if not ev:
             return None
         w = self._to_wire(mid, 0.0, ev[0], rng)
         w["storm"] = False

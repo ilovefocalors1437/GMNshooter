@@ -16,7 +16,15 @@
 </script>
 
 <style>
-  :root { --accent:#59c0ff; --danger:#ff4d6d; --good:#8fffa8; --me:#59c0ff; }
+  :root {
+    --accent:#59c0ff; --danger:#ff4d6d; --good:#8fffa8; --me:#59c0ff;
+
+    /* ทั้งหน้านี้ออกแบบมาสำหรับมือถือแนวตั้ง ทุกขนาดเลยผูกกับ "ความกว้างจอ"
+       บนคอมจอกว้าง 1920 นั่นแปลว่าตัวหนังสือ 11vw = 211px — ล้นจอทั้งหมด
+       --u คือ vw ที่ถูกเพดานความสูงจอกดไว้ ทำให้บนคอมได้คอลัมน์กว้างเท่ามือถือ
+       บนมือถือแนวตั้ง 1vw < 0.52vh เสมอ → ได้ค่าเดิมเป๊ะ ไม่กระทบของที่เทสมาแล้ว */
+    --u: min(1vw, 0.52vh);
+  }
   * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
   html, body {
     height:100%; width:100%; overflow:hidden; background:#04060d; color:#fff;
@@ -28,54 +36,57 @@
 
   .pane { position:fixed; inset:0; z-index:10; display:none;
           flex-direction:column; align-items:center; justify-content:center;
-          gap:2.4vh; padding:6vw; text-align:center;
+          gap:2.4vh; padding:calc(6 * var(--u)); text-align:center;
           background:radial-gradient(ellipse at 50% 30%, #0d1730 0%, #04060d 72%); }
   .pane.on { display:flex; }
 
-  h1 { font-size:11vw; letter-spacing:.08em; }
+  h1 { font-size:calc(11 * var(--u)); letter-spacing:.08em; }
   h1 .b { color:var(--accent); }
-  .sub { font-size:4.2vw; opacity:.75; font-weight:400; line-height:1.6; }
-  .err { color:var(--danger); font-size:4vw; min-height:5vw; }
+  .sub { font-size:calc(4.2 * var(--u)); opacity:.75; font-weight:400; line-height:1.6; }
+  .err { color:var(--danger); font-size:calc(4 * var(--u)); min-height:calc(5 * var(--u)); }
 
   input {
-    font:700 9vw/1.2 "Bahnschrift","Segoe UI",sans-serif; text-align:center;
-    width:74vw; padding:3vw; border-radius:3vw; border:.7vw solid rgba(255,255,255,.25);
+    /* แยกเป็น longhand — calc() ใน shorthand ของ font ตรงตำแหน่ง size/line-height
+       เบราว์เซอร์บางตัวพาร์สไม่ผ่านแล้วทิ้งทั้งบรรทัด */
+    font-weight:700; font-size:calc(9 * var(--u)); line-height:1.2;
+    font-family:"Bahnschrift","Segoe UI",sans-serif; text-align:center;
+    width:calc(74 * var(--u)); padding:calc(3 * var(--u)); border-radius:calc(3 * var(--u)); border:calc(.7 * var(--u)) solid rgba(255,255,255,.25);
     background:rgba(255,255,255,.06); color:#fff; letter-spacing:.16em; text-transform:uppercase;
   }
   input:focus { outline:none; border-color:var(--accent); }
 
   .btn {
-    font-size:6vw; padding:3.4vw 9vw; border-radius:3vw; border:none;
+    font-size:calc(6 * var(--u)); padding:calc(3.4 * var(--u)) calc(9 * var(--u)); border-radius:calc(3 * var(--u)); border:none;
     background:var(--accent); color:#06121c; letter-spacing:.06em;
   }
   .btn.ghost { background:rgba(255,255,255,.10); color:#fff; }
   .btn:disabled { opacity:.4; }
 
-  .diffs { display:flex; gap:2.4vw; flex-wrap:wrap; justify-content:center; }
-  .diff { padding:2.6vw 4.4vw; border-radius:2.4vw; font-size:4.4vw;
-          border:.6vw solid rgba(255,255,255,.2); background:rgba(255,255,255,.04); }
+  .diffs { display:flex; gap:calc(2.4 * var(--u)); flex-wrap:wrap; justify-content:center; }
+  .diff { padding:calc(2.6 * var(--u)) calc(4.4 * var(--u)); border-radius:calc(2.4 * var(--u)); font-size:calc(4.4 * var(--u));
+          border:calc(.6 * var(--u)) solid rgba(255,255,255,.2); background:rgba(255,255,255,.04); }
   .diff.on { border-color:var(--accent); background:rgba(89,192,255,.16); }
-  .diff small { display:block; font-size:3vw; opacity:.6; font-weight:400; }
+  .diff small { display:block; font-size:calc(3 * var(--u)); opacity:.6; font-weight:400; }
 
-  .roster { display:flex; gap:2.4vw; }
-  .dot { width:9vw; height:9vw; border-radius:50%; opacity:.22; }
+  .roster { display:flex; gap:calc(2.4 * var(--u)); }
+  .dot { width:calc(9 * var(--u)); height:calc(9 * var(--u)); border-radius:50%; opacity:.22; }
   .dot.on { opacity:1; }
 
-  #countdown { font-size:34vw; line-height:1; color:var(--accent); }
+  #countdown { font-size:calc(34 * var(--u)); line-height:1; color:var(--accent); }
 
   /* ══ HUD ตอนเล่น ══ */
   #hud { position:fixed; inset:0; z-index:5; pointer-events:none; display:none; }
   #hud.on { display:block; }
-  #topbar { position:absolute; top:0; left:0; right:0; padding:2.6vw 4vw;
+  #topbar { position:absolute; top:0; left:0; right:0; padding:calc(2.6 * var(--u)) calc(4 * var(--u));
             display:flex; justify-content:space-between; align-items:flex-start;
             background:linear-gradient(rgba(0,0,0,.55), transparent); }
   /* คะแนนเล็กลง — GMN คือพระเอก ไม่ใช่ตัวเลขคะแนน */
-  #teamscore { font-size:4.4vw; line-height:1; text-shadow:0 0 2vw rgba(89,192,255,.5); }
-  #teamname { font-size:2.6vw; opacity:.55; letter-spacing:.14em; font-weight:400; }
+  #teamscore { font-size:calc(4.4 * var(--u)); line-height:1; text-shadow:0 0 calc(2 * var(--u)) rgba(89,192,255,.5); }
+  #teamname { font-size:calc(2.6 * var(--u)); opacity:.55; letter-spacing:.14em; font-weight:400; }
   /* นาฬิกาโชว์เฉพาะจอ admin — บนมือถือรกและกดดันเด็กเปล่าๆ */
   #clock { display:none; }
   #combo { position:absolute; top:13vh; left:0; right:0; text-align:center;
-           font-size:6vw; color:var(--good); opacity:0; transition:opacity .15s; }
+           font-size:calc(6 * var(--u)); color:var(--good); opacity:0; transition:opacity .15s; }
   #combo.on { opacity:1; }
 
 
@@ -83,124 +94,136 @@
   .ft b { display:block; font-size:1.5em; color:var(--good); }
   .ft span { font-size:.72em; opacity:.9; }
 
-  #cross { position:absolute; left:50%; top:50%; width:14vw; height:14vw;
+  #cross { position:absolute; left:50%; top:50%; width:calc(14 * var(--u)); height:calc(14 * var(--u));
            transform:translate(-50%,-50%); }
-  #cross .ring { position:absolute; inset:0; border:.7vw solid rgba(255,255,255,.3);
+  #cross .ring { position:absolute; inset:0; border:calc(.7 * var(--u)) solid rgba(255,255,255,.3);
                  border-radius:50%; }
-  #cross.lock .ring { border-color:var(--danger); box-shadow:0 0 3vw var(--danger); }
-  #cross .d { position:absolute; left:50%; top:50%; width:1vw; height:1vw;
-              margin:-.5vw 0 0 -.5vw; background:#fff; border-radius:50%; }
+  #cross.lock .ring { border-color:var(--danger); box-shadow:0 0 calc(3 * var(--u)) var(--danger); }
+  #cross .d { position:absolute; left:50%; top:50%; width:calc(1 * var(--u)); height:calc(1 * var(--u));
+              margin:calc(-.5 * var(--u)) 0 0 calc(-.5 * var(--u)); background:#fff; border-radius:50%; }
 
   /* ขนาดนิ้วโป้งพอดี ไม่ใช่ครึ่งจอ — ใหญ่ไปก็บังฉากซึ่งเป็นของที่ต้องโชว์ */
   /* ── การ์ด GMN ── */
-  #cards { position:absolute; left:3vw; top:11vh; width:52vw; max-width:340px; }
-  .cd { background:rgba(8,14,28,.78); border-left:1vw solid var(--accent);
-        border-radius:1.4vw; padding:2vw 2.4vw; margin-bottom:1.6vw;
-        font-size:3.1vw; line-height:1.45; font-weight:400; }
+  #cards { position:absolute; left:calc(3 * var(--u)); top:11vh; width:calc(52 * var(--u)); max-width:340px; }
+  .cd { background:rgba(8,14,28,.78); border-left:calc(1 * var(--u)) solid var(--accent);
+        border-radius:calc(1.4 * var(--u)); padding:calc(2 * var(--u)) calc(2.4 * var(--u)); margin-bottom:calc(1.6 * var(--u));
+        font-size:calc(3.1 * var(--u)); line-height:1.45; font-weight:400; }
   .cd.miss { border-left-color:var(--danger); opacity:.75; }
   .cd.fresh { animation:cdin 300ms ease-out; }
-  @keyframes cdin { from { opacity:0; transform:translateX(-4vw); } }
-  .cd-grp { font-weight:700; color:#cfe6ff; font-size:3.6vw; margin-bottom:.6vw; }
-  .cd-row { display:flex; justify-content:space-between; gap:2vw; }
+  @keyframes cdin { from { opacity:0; transform:translateX(calc(-4 * var(--u))); } }
+  .cd-grp { font-weight:700; color:#cfe6ff; font-size:calc(3.6 * var(--u)); margin-bottom:calc(.6 * var(--u)); }
+  .cd-row { display:flex; justify-content:space-between; gap:calc(2 * var(--u)); }
   .cd-row span { opacity:.6; }
   .cd-row b { text-align:right; font-weight:700; }
-  .cd-row b i { font-style:normal; opacity:.75; font-size:2.7vw; }
-  .cd-cam { margin-top:.8vw; color:var(--good); font-weight:700; }
-  .cd-miss { margin-top:.6vw; color:var(--danger); font-weight:700; }
+  .cd-row b i { font-style:normal; opacity:.75; font-size:calc(2.7 * var(--u)); }
+  .cd-cam { margin-top:calc(.8 * var(--u)); color:var(--good); font-weight:700; }
+  .cd-miss { margin-top:calc(.6 * var(--u)); color:var(--danger); font-weight:700; }
 
   /* ── พายุ ── */
-  body.storm #hud { box-shadow:inset 0 0 14vw rgba(255,77,109,.45); }
+  body.storm #hud { box-shadow:inset 0 0 calc(14 * var(--u)) rgba(255,77,109,.45); }
   #stormbar { display:none; position:absolute; left:50%; top:9vh;
-              transform:translateX(-50%); width:70vw; text-align:center; }
-  #stormlabel { font-size:3.2vw; letter-spacing:.22em; color:var(--danger); opacity:.9; }
-  #stormcount { font-size:11vw; line-height:1; color:#fff;
-                text-shadow:0 0 4vw rgba(255,77,109,.8); font-variant-numeric:tabular-nums; }
-  #stormcount.ok { color:var(--good); text-shadow:0 0 4vw rgba(143,255,168,.8); }
-  #stormneed { font-size:3vw; opacity:.75; margin-top:.6vw; font-weight:400; }
-  #stormtrack { position:relative; height:2.2vw; margin-top:1.4vw;
-                background:rgba(255,255,255,.14); border-radius:1.1vw; overflow:visible; }
-  #stormfill { height:100%; width:0; background:var(--good); border-radius:1.1vw;
+              transform:translateX(-50%); width:calc(70 * var(--u)); text-align:center; }
+  #stormlabel { font-size:calc(3.2 * var(--u)); letter-spacing:.22em; color:var(--danger); opacity:.9; }
+  #stormcount { font-size:calc(11 * var(--u)); line-height:1; color:#fff;
+                text-shadow:0 0 calc(4 * var(--u)) rgba(255,77,109,.8); font-variant-numeric:tabular-nums; }
+  #stormcount.ok { color:var(--good); text-shadow:0 0 calc(4 * var(--u)) rgba(143,255,168,.8); }
+  #stormneed { font-size:calc(3 * var(--u)); opacity:.75; margin-top:calc(.6 * var(--u)); font-weight:400; }
+  #stormtrack { position:relative; height:calc(2.2 * var(--u)); margin-top:calc(1.4 * var(--u));
+                background:rgba(255,255,255,.14); border-radius:calc(1.1 * var(--u)); overflow:visible; }
+  #stormfill { height:100%; width:0; background:var(--good); border-radius:calc(1.1 * var(--u));
                transition:width .2s; }
-  #stormline { position:absolute; top:-1vw; width:.6vw; height:4.2vw;
+  #stormline { position:absolute; top:calc(-1 * var(--u)); width:calc(.6 * var(--u)); height:calc(4.2 * var(--u));
                background:#fff; opacity:.9; }
   #stormbanner { position:absolute; inset:0; display:flex; align-items:center;
-                 justify-content:center; font-size:13vw; color:var(--danger);
+                 justify-content:center; font-size:calc(13 * var(--u)); color:var(--danger);
                  opacity:0; pointer-events:none; transition:opacity .3s;
-                 text-shadow:0 0 6vw rgba(255,77,109,.9); }
+                 text-shadow:0 0 calc(6 * var(--u)) rgba(255,77,109,.9); }
   #stormbanner.on { opacity:1; animation:sb .5s ease-out; }
   @keyframes sb { from { transform:scale(1.5); } }
 
   /* ── QTE ลูกไฟดวงสุดท้าย ── */
-  body.qte #hud { box-shadow:inset 0 0 16vw rgba(255,179,122,.5); }
+  body.qte #hud { box-shadow:inset 0 0 calc(16 * var(--u)) rgba(255,179,122,.5); }
   #qtebar { display:none; position:absolute; left:50%; top:8vh;
-            transform:translateX(-50%); width:74vw; text-align:center; }
-  #qtelabel { font-size:3.2vw; letter-spacing:.22em; color:#ffb37a; opacity:.9; }
-  #qtecount { font-size:12vw; line-height:1.05; color:#fff;
-              text-shadow:0 0 4vw rgba(255,179,122,.85); font-variant-numeric:tabular-nums; }
-  #qtecount.ok { color:var(--good); text-shadow:0 0 4vw rgba(143,255,168,.85); }
-  #qtetrack { position:relative; height:2.4vw; margin-top:1.2vw;
-              background:rgba(255,255,255,.14); border-radius:1.2vw; overflow:hidden; }
-  #qtefill { height:100%; width:0; background:#ffb37a; border-radius:1.2vw;
+            transform:translateX(-50%); width:calc(74 * var(--u)); text-align:center; }
+  #qtelabel { font-size:calc(3.2 * var(--u)); letter-spacing:.22em; color:#ffb37a; opacity:.9; }
+  #qtecount { font-size:calc(12 * var(--u)); line-height:1.05; color:#fff;
+              text-shadow:0 0 calc(4 * var(--u)) rgba(255,179,122,.85); font-variant-numeric:tabular-nums; }
+  #qtecount.ok { color:var(--good); text-shadow:0 0 calc(4 * var(--u)) rgba(143,255,168,.85); }
+  #qtetrack { position:relative; height:calc(2.4 * var(--u)); margin-top:calc(1.2 * var(--u));
+              background:rgba(255,255,255,.14); border-radius:calc(1.2 * var(--u)); overflow:hidden; }
+  #qtefill { height:100%; width:0; background:#ffb37a; border-radius:calc(1.2 * var(--u));
              transition:width .12s linear; }
   #qtefill.ok { background:var(--good); }
-  #qtetime { font-size:4.6vw; margin-top:1vw; font-variant-numeric:tabular-nums; opacity:.9; }
-  #qtehint { font-size:3vw; opacity:.75; font-weight:400; margin-top:.6vw; }
+  #qtetime { font-size:calc(4.6 * var(--u)); margin-top:calc(1 * var(--u)); font-variant-numeric:tabular-nums; opacity:.9; }
+  #qtehint { font-size:calc(3 * var(--u)); opacity:.75; font-weight:400; margin-top:calc(.6 * var(--u)); }
   #qtebanner { position:absolute; inset:0; display:flex; align-items:center;
-               justify-content:center; font-size:12vw; color:#ffb37a;
+               justify-content:center; font-size:calc(12 * var(--u)); color:#ffb37a;
                opacity:0; pointer-events:none; transition:opacity .3s;
-               text-shadow:0 0 6vw rgba(255,179,122,.9); }
+               text-shadow:0 0 calc(6 * var(--u)) rgba(255,179,122,.9); }
   #qtebanner.on { opacity:1; animation:sb .5s ease-out; }
   body.qte #fire { animation:firepulse .5s ease-in-out infinite alternate; }
   @keyframes firepulse { to { transform:scale(1.12); } }
-  #sum .sc.qte b { font-size:4.4vw; }
+  #sum .sc.qte b { font-size:calc(4.4 * var(--u)); }
   #sum .sc.qte.ok b { color:var(--good); }
   #sum .sc.qte.bad b { color:#ffb37a; }
 
-  #fire { position:absolute; right:6vw; bottom:6vh; width:15vw; height:15vw;
+  /* บนคอมต้องล็อกเมาส์ก่อนถึงจะเล็งได้ลื่น — ไม่บอกไว้ไม่มีทางเดาออก */
+  #mousehint { display:none; position:absolute; left:50%; bottom:14vh;
+               transform:translateX(-50%); white-space:nowrap;
+               font-size:calc(2.6 * var(--u)); font-weight:400; opacity:.6;
+               background:rgba(4,6,13,.7); padding:calc(1.4 * var(--u)) calc(3 * var(--u));
+               border-radius:calc(2 * var(--u)); }
+  body.desktop.unlocked #mousehint { display:block; }
+  /* ปุ่มยิงไม่ซ่อนบนคอม — เผื่อเบราว์เซอร์บล็อก pointer lock จะได้ไม่เหลือทางยิงเลย */
+  body.desktop #fire { opacity:.55; }
+
+  #fire { position:absolute; right:calc(6 * var(--u)); bottom:6vh; width:calc(15 * var(--u)); height:calc(15 * var(--u));
           max-width:88px; max-height:88px;
           border-radius:50%; background:var(--me); color:#06121c;
           display:flex; align-items:center; justify-content:center;
-          font-size:3.4vw; pointer-events:auto; box-shadow:0 .7vh 0 rgba(0,0,0,.45); }
+          font-size:calc(3.4 * var(--u)); pointer-events:auto; box-shadow:0 .7vh 0 rgba(0,0,0,.45); }
   #fire.down { transform:translateY(.7vh); box-shadow:none; }
 
   /* ══ สรุปผล (ฝั่งผู้เล่น) ══ */
   /* selector เดิมเขียนว่า #sum แต่ id จริงคือ p-sum — สไตล์ทั้งบล็อกเลยไม่เคยติด */
-  #p-sum { justify-content:flex-start; padding:5vh 6vw 4vh; gap:0; overflow-y:auto; }
-  #p-sum .s-team { font-size:3.4vw; opacity:.55; font-weight:400; letter-spacing:.1em; }
+  #p-sum { justify-content:flex-start; padding:5vh calc(6 * var(--u)) 9vh; gap:0; overflow-y:auto; }
+  #p-sum .s-team { font-size:calc(3.4 * var(--u)); opacity:.55; font-weight:400; letter-spacing:.1em; }
   #p-sum .s-team b { font-weight:700; opacity:1; letter-spacing:.04em; }
-  #p-sum .s-score { font-size:22vw; line-height:1; color:var(--accent);
+  #p-sum .s-score { font-size:calc(22 * var(--u)); line-height:1; color:var(--accent);
                     font-variant-numeric:tabular-nums;
-                    text-shadow:0 0 8vw rgba(89,192,255,.35); }
-  #p-sum .s-kills { font-size:4vw; font-weight:400; opacity:.7; margin-top:.6vh; }
+                    text-shadow:0 0 calc(8 * var(--u)) rgba(89,192,255,.35); }
+  #p-sum .s-kills { font-size:calc(4 * var(--u)); font-weight:400; opacity:.7; margin-top:.6vh; }
   #p-sum .s-kills b { color:#fff; font-weight:700; }
 
-  #p-sum h2 { font-size:2.7vw; font-weight:700; letter-spacing:.26em; opacity:.42;
+  #p-sum h2 { font-size:calc(2.7 * var(--u)); font-weight:700; letter-spacing:.26em; opacity:.42;
               margin:4.2vh 0 1.6vh; }
 
   #p-sum .s-list { width:100%; max-width:520px; }
-  .s-row { display:flex; align-items:baseline; gap:2.4vw; padding:1.5vw 0;
+  .s-row { display:flex; align-items:baseline; gap:calc(2.4 * var(--u)); padding:calc(1.5 * var(--u)) 0;
            border-bottom:1px solid rgba(255,255,255,.08); text-align:left; }
-  .s-row .nm { flex:1; font-size:3.8vw; color:#cfe6ff; }
-  .s-row .cam { font-size:3vw; opacity:.55; font-weight:400; }
-  .s-row .n { font-size:4.4vw; font-variant-numeric:tabular-nums; color:var(--good); }
-  .s-row .n i { font-style:normal; font-size:2.6vw; opacity:.5; font-weight:400;
-                margin-left:.6vw; color:#fff; }
-  .s-empty { font-size:3.4vw; font-weight:400; opacity:.4; padding:2vw 0; }
+  .s-row .nm { flex:1; font-size:calc(3.8 * var(--u)); color:#cfe6ff; }
+  .s-row .cam { font-size:calc(3 * var(--u)); opacity:.55; font-weight:400; }
+  .s-row .n { font-size:calc(4.4 * var(--u)); font-variant-numeric:tabular-nums; color:var(--good); }
+  .s-row .n i { font-style:normal; font-size:calc(2.6 * var(--u)); opacity:.5; font-weight:400;
+                margin-left:calc(.6 * var(--u)); color:#fff; }
+  .s-empty { font-size:calc(3.4 * var(--u)); font-weight:400; opacity:.4; padding:calc(2 * var(--u)) 0; }
 
-  #p-sum .s-gmn { width:100%; max-width:520px; font-size:3.3vw; font-weight:400;
+  #p-sum .s-gmn { width:100%; max-width:520px; font-size:calc(3.3 * var(--u)); font-weight:400;
                   line-height:1.75; opacity:.8; text-align:left; }
   #p-sum .s-gmn b { color:#cfe6ff; }
   #p-sum .s-nums { width:100%; max-width:520px; margin-top:2vh; }
   #p-sum .s-nums .sc { display:flex; justify-content:space-between; align-items:baseline;
-                       padding:1vw 0; font-size:3.3vw; font-weight:400; opacity:.85; }
-  #p-sum .s-nums .sc b { font-weight:700; font-size:5vw; color:var(--accent);
+                       padding:calc(1 * var(--u)) 0; font-size:calc(3.3 * var(--u)); font-weight:400; opacity:.85; }
+  #p-sum .s-nums .sc b { font-weight:700; font-size:calc(5 * var(--u)); color:var(--accent);
                          font-variant-numeric:tabular-nums; }
   #p-sum .btn { margin-top:4vh; }
+  /* หน้าสรุปยาวและเลื่อนได้ — บรรทัดเครดิตที่ตรึงไว้ล่างจอจะทับแถวสุดท้ายพอดี
+  #p-sum.on ~ .credit { display:none; }
 
   .credit { position:fixed; bottom:1.4vh; left:0; right:0; text-align:center;
-            font-size:2.6vw; opacity:.4; font-weight:400; z-index:11; pointer-events:none; }
+            font-size:calc(2.6 * var(--u)); opacity:.4; font-weight:400; z-index:11; pointer-events:none; }
   #err { position:fixed; left:0; right:0; bottom:0; z-index:40; background:#b0121a;
-         padding:2vw; font-size:3vw; font-family:ui-monospace,monospace;
+         padding:calc(2 * var(--u)); font-size:calc(3 * var(--u)); font-family:ui-monospace,monospace;
          white-space:pre-wrap; display:none; max-height:22vh; overflow:auto; }
 </style>
 </head>
@@ -212,8 +235,8 @@
 <div id="p-home" class="pane on">
   <h1>GMN<span class="b">shooter</span></h1>
   <div class="sub">ยิงอุกกาบาตจริงจาก Global Meteor Network</div>
-  <button class="btn" id="go-player" style="width:74vw">เข้าร่วมเป็นผู้เล่น</button>
-  <button class="btn ghost" id="go-admin" style="width:74vw;font-size:4.4vw">เข้าสู่ระบบผู้ดูแล</button>
+  <button class="btn" id="go-player" style="width:calc(74 * var(--u))">เข้าร่วมเป็นผู้เล่น</button>
+  <button class="btn ghost" id="go-admin" style="width:calc(74 * var(--u));font-size:calc(4.4 * var(--u))">เข้าสู่ระบบผู้ดูแล</button>
 </div>
 
 <!-- 1. กรอกรหัสห้อง -->
@@ -224,24 +247,24 @@
          autocapitalize="characters" inputmode="text">
   <div class="err" id="code-err"></div>
   <button class="btn" id="code-go">เข้าห้อง</button>
-  <button class="btn ghost" id="code-back" style="font-size:4vw;padding:2vw 6vw">ย้อนกลับ</button>
+  <button class="btn ghost" id="code-back" style="font-size:calc(4 * var(--u));padding:calc(2 * var(--u)) calc(6 * var(--u))">ย้อนกลับ</button>
 </div>
 
 <!-- 1b. เข้าสู่ระบบผู้ดูแล -->
 <div id="p-admin" class="pane">
-  <h1 style="font-size:7vw">ผู้ดูแล</h1>
+  <h1 style="font-size:calc(7 * var(--u))">ผู้ดูแล</h1>
   <div class="sub">กรอกรหัสผู้ดูแลเพื่อเข้าแผงควบคุม</div>
   <input id="apw" type="password" maxlength="32" placeholder="รหัสผ่าน" autocomplete="off"
-         style="font-size:6vw;letter-spacing:.06em;text-transform:none">
+         style="font-size:calc(6 * var(--u));letter-spacing:.06em;text-transform:none">
   <div class="err" id="apw-err"></div>
   <button class="btn" id="apw-go">เข้าสู่ระบบ</button>
-  <button class="btn ghost" id="apw-back" style="font-size:4vw;padding:2vw 6vw">ย้อนกลับ</button>
+  <button class="btn ghost" id="apw-back" style="font-size:calc(4 * var(--u));padding:calc(2 * var(--u)) calc(6 * var(--u))">ย้อนกลับ</button>
 </div>
 
 <!-- 2. ตั้งชื่อทีม (เฉพาะคนแรก) -->
 <div id="p-team" class="pane">
   <div class="sub">คุณเป็นคนแรกของห้องนี้</div>
-  <h1 style="font-size:7vw">ตั้งชื่อทีม</h1>
+  <h1 style="font-size:calc(7 * var(--u))">ตั้งชื่อทีม</h1>
   <input id="team" maxlength="12" placeholder="ชื่อทีม" autocomplete="off">
   <div class="err" id="team-err"></div>
   <button class="btn" id="team-go">ยืนยัน</button>
@@ -250,11 +273,11 @@
 <!-- 3. ห้องรอ -->
 <div id="p-lobby" class="pane">
   <div class="sub">ทีม</div>
-  <h1 id="lobby-team" style="font-size:9vw">—</h1>
+  <h1 id="lobby-team" style="font-size:calc(9 * var(--u))">—</h1>
   <div class="roster" id="roster"></div>
   <div class="sub" id="lobby-hint">รอ admin กดเริ่ม · เพื่อนยังเข้าได้อีก</div>
-  <div class="sub" id="lobby-count" style="font-size:5vw;color:var(--accent)">1 คน</div>
-  <div class="sub" style="font-size:3.4vw">รหัสห้อง <b id="lobby-code">—</b></div>
+  <div class="sub" id="lobby-count" style="font-size:calc(5 * var(--u));color:var(--accent)">1 คน</div>
+  <div class="sub" style="font-size:calc(3.4 * var(--u))">รหัสห้อง <b id="lobby-code">—</b></div>
 </div>
 
 <!-- 4. นับถอยหลัง -->
@@ -290,6 +313,7 @@
   <div id="qtebanner">รัวเลย!</div>
 
   <div id="cross"><div class="ring"></div><div class="d"></div></div>
+  <div id="mousehint">คลิกเพื่อล็อกเมาส์แล้วเล็งได้เลย · คลิก = ยิง · Esc = ปลดล็อก</div>
   <div id="fire">ยิง</div>
 </div>
 
@@ -322,10 +346,10 @@
   /* โหมดดูอย่างเดียว (iframe ฝั่งซ้ายจอ admin) */
   body.spectator #fire   { display:none !important; }
   body.spectator #cross  { opacity:.25; }
-  body.spectator #clock  { display:block; font-size:3.4vw; opacity:.8; }
-  body.spectator .credit { font-size:1.6vw; }
-  body.spectator #cards  { width:36vw; font-size:.9em; }
-  body.spectator #teamscore { font-size:3.2vw; }
+  body.spectator #clock  { display:block; font-size:calc(3.4 * var(--u)); opacity:.8; }
+  body.spectator .credit { font-size:calc(1.6 * var(--u)); }
+  body.spectator #cards  { width:calc(36 * var(--u)); font-size:.9em; }
+  body.spectator #teamscore { font-size:calc(3.2 * var(--u)); }
 </style>
 <div class="credit">Meteor data: Global Meteor Network (CC BY 4.0)</div>
 <div id="err"></div>

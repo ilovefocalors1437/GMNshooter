@@ -376,6 +376,34 @@ createTurret(CFG.assets.turret, 0x59c0ff).then(r => {
 
 const look = new TouchLook($('scene'));
 
+// ══ เล่นบนคอม ═════════════════════════════════════════════
+// หน้านี้ออกแบบมาสำหรับมือถือ แต่ admin เล่นเต็มจอบนโน้ตบุ๊กทุกรอบ
+// ถ้าไม่รองรับเมาส์ให้ดี admin จะเจอเกมคนละเกมกับเด็ก
+const DESKTOP = !!(window.matchMedia && window.matchMedia('(pointer: fine)').matches);
+if (DESKTOP) {
+  document.body.classList.add('desktop', 'unlocked');
+  look.onLockChange = (on) => document.body.classList.toggle('unlocked', !on);
+}
+
+/**
+ * วงเล็งต้องผูกกับกรวย aim assist จริง ไม่ใช่สัดส่วนของจอ
+ *
+ * เดิมวงกว้าง 14vw = 269px บนจอ 1920 ซึ่งกินมุม ~8.9°
+ * แต่ aim assist ทำงานแค่ในกรวย lockOnDeg → ของที่ "อยู่ในวง" แล้วยิงไม่โดน
+ * เพราะจริงๆ มันอยู่นอกกรวย ผู้เล่นไม่มีทางรู้เลยว่าทำไมยิงแล้วไม่มีอะไรเกิดขึ้น
+ *
+ * ตั้งให้ "เส้นผ่าศูนย์กลางวง = รัศมีของกรวย" — วงเล็กกว่ากรวยจริงเท่าตัว
+ * ตั้งให้เท่ากรวยเป๊ะจะได้วงใหญ่จนบังจอ สัญญาจึงเป็น "เข้าวง = โดนแน่" ไม่ใช่ "นอกวง = ไม่โดน"
+ */
+function sizeCross() {
+  const half = Math.tan(CFG.camera.fov * DEG / 2);
+  const px = (Math.tan(CFG.assist.lockOnDeg * DEG) / half) * window.innerHeight;
+  const el = $('cross');
+  el.style.width = px + 'px';
+  el.style.height = px + 'px';
+}
+sizeCross();
+
 // ══ กระสุน ════════════════════════════════════════════════
 class Tracers {
   constructor(scene) {
@@ -466,13 +494,16 @@ function fire() {
   const { target, err } = pickTarget();
 
   if (target) {
+    // ล็อกได้ = กระสุนเข้าเป้า ไม่มีเงื่อนไขซ่อนอีกชั้น
+    //
+    // ของเดิมมี 2 ด่าน: ต้องล็อกติด *และ* กระสุนต้องตกใกล้ก้อนพอ
+    // แต่ด่านที่สองมองไม่เห็น — เด็กเห็นวงแดง กดยิง แล้วไม่มีอะไรเกิดขึ้น
+    // โดยไม่มีทางรู้ว่าทำไม (วัดจริง: เล็งพลาด ±2° โดนแค่ 16-36%)
+    // ตอนนี้วงเล็งถูกวาดเท่ากรวย lockOnDeg เป๊ะ → วงกลายเป็นสัญญาที่เชื่อถือได้
+    // "เข้าวงแดง = โดน" — ความยากอยู่ที่การเล็งตามเป้าที่เคลื่อนที่ ไม่ใช่ด่านลับ
     field.predict(target, t, CFG.bullet.travelMs, _end);
-    const reach = _mp.distanceTo(_end);
-    dirFrom(look.yaw, look.pitch, _aim);
-    _raw.copy(_mp).addScaledVector(_aim, reach);
-    const help = CFG.assist.correction * Math.pow(1 - err, CFG.assist.falloff);
-    _end.lerpVectors(_raw, _end, help);
-    tracers.spawn(_mp, _end, CFG.bullet.travelMs, target.id);
+    const shot = tracers.spawn(_mp, _end, CFG.bullet.travelMs, target.id);
+    if (shot) shot.fireT = t;
   } else {
     dirFrom(look.yaw, look.pitch, _aim);
     _end.copy(_mp).addScaledVector(_aim, CFG.bullet.missSpeed * CFG.bullet.missMs * .001);
@@ -480,13 +511,17 @@ function fire() {
   }
 }
 
+/**
+ * กระสุนถึงปลายทาง — นัดนี้นับว่าโดนไหม
+ *
+ * targetId มีค่าก็ต่อเมื่อเล็งติดตอนยิงเท่านั้น → นัดนั้นโดน
+ * เด็กเห็นวงแดง กดยิง ก้อนแตก — กฎเดียวจบ ไม่มีเงื่อนไขลับที่มองไม่เห็น
+ * การ dedupe ยังเป็นของ server เหมือนเดิม client ไม่ได้ตัดสินเอง
+ */
 function onArrive(it, pos) {
   if (!it.targetId || !S.playing || S.qteOn) return;
   if (S.destroyed.has(it.targetId)) return;      // เพื่อนยิงไปก่อนแล้ว
-  const m = field.byId(it.targetId);
-  if (!m) return;
-  if (m.position.distanceTo(pos) > m.radius * CFG.meteor.hitRadiusBonus) return;
-  // เราคิดว่าโดน — แต่ไม่ลบเอง ส่งให้ server ตัดสินแล้วรอ event destroyed
+  if (!field.byId(it.targetId)) return;          // ไหม้หมดก่อนกระสุนถึง
   sock.emit('kill', { meteorId: it.targetId });
 }
 
@@ -509,6 +544,13 @@ fb.addEventListener('touchstart', e => {
 }, { passive: false }));
 fb.addEventListener('mousedown', () => { holding = true; fb.classList.add('down'); holdLoop(); });
 window.addEventListener('mouseup', () => { holding = false; fb.classList.remove('down'); });
+
+// ล็อกเมาส์อยู่ = คลิกที่ไหนก็ยิง (ปุ่ม "ยิง" ถูกซ่อนไปแล้วบนคอม)
+window.addEventListener('mousedown', (e) => {
+  if (!look.locked || e.button !== 0) return;
+  holding = true; holdLoop();
+});
+window.addEventListener('mouseup', () => { holding = false; });
 
 // ══ คุณภาพอัตโนมัติ (§8) ══════════════════════════════════
 let probeFrames = 0, probeStart = 0, qualityLocked = false;
@@ -615,6 +657,7 @@ window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
+  sizeCross();
 });
 
 /** นับเลขขึ้น — 472,388 ที่ค่อยๆ ไต่ขึ้นให้ความรู้สึกถึงสเกลมากกว่าโชว์ทันที */

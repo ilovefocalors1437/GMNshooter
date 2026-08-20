@@ -47,12 +47,35 @@ export class TouchLook {
     this.el.addEventListener('touchend', (e) => this._end(e), opt);
     this.el.addEventListener('touchcancel', (e) => this._end(e), opt);
 
+    // ── เมาส์: ล็อกเคอร์เซอร์ไปเลย ขยับเมาส์เล็งได้เหมือนเกม FPS ──
+    //
+    // เดิมมีแต่ "กดค้างแล้วลาก" ซึ่งถูกสำหรับนิ้ว แต่บนคอมมันฝืนมือมาก
+    // (admin ต้องเล่นเต็มจอบนโน้ตบุ๊คทุกรอบ — ลากเมาส์ทีละนิดเล็งไม่ทันอุกกาบาตแน่นอน)
+    this.locked = false;
+    this.onLockChange = null;
+    const fine = window.matchMedia && window.matchMedia('(pointer: fine)').matches;
+    if (fine) {
+      this.el.addEventListener('click', () => {
+        if (!document.pointerLockElement && this.enabled && this.el.requestPointerLock) {
+          this.el.requestPointerLock();
+        }
+      });
+      document.addEventListener('pointerlockchange', () => {
+        this.locked = document.pointerLockElement === this.el;
+        if (this.onLockChange) this.onLockChange(this.locked);
+      });
+      document.addEventListener('mousemove', (e) => {
+        if (!this.locked || !this.enabled) return;
+        this._apply(e.movementX || 0, e.movementY || 0);
+      });
+    }
+
     // เผื่อทดสอบบนคอม — ลากเมาส์ได้เหมือนกัน
     let mouse = false;
     this.el.addEventListener('mousedown', (e) => { mouse = true; this._px = e.clientX; this._py = e.clientY; });
     window.addEventListener('mouseup', () => { mouse = false; });
     window.addEventListener('mousemove', (e) => {
-      if (!mouse || !this.enabled) return;
+      if (!mouse || !this.enabled || this.locked) return;   // ล็อกอยู่แล้วใช้ movementX แทน
       this._apply(e.clientX - this._px, e.clientY - this._py);
       this._px = e.clientX; this._py = e.clientY;
     });
