@@ -29,6 +29,19 @@ from . import config as C
 _lock = threading.Lock()
 _con = None
 
+# สถานะการเตรียมฐานข้อมูล — /health และ log ตอนบูตอ่านจากตรงนี้
+# ต้องตอบให้ได้ว่า "หาที่ path ไหน เจอไหม ใหญ่เท่าไร แตก .gz/.xz ผลเป็นยังไง"
+_STATE = {
+    "ok": False,
+    "db_path": None,
+    "db_bytes": 0,
+    "extracted_from": None,
+    "extract_sec": None,
+    "archives": [],
+    "checked_at": None,
+    "error": None,
+}
+
 # ── ISO 3166-1 alpha-2 → ชื่อประเทศ (เท่าที่ GMN มีสถานีจริง) ──
 # ไม่ใช้ lib ภายนอกเพื่อ map ชื่อ — dict สั้นๆ พอ ที่ไม่รู้จักก็โชว์รหัสไปตรงๆ
 COUNTRY = {
@@ -132,37 +145,165 @@ def az_to_yaw_deg(az_deg: float) -> float:
 # ══════════════════════════════════════════════════════════
 def _ensure_db():
     """
-    แตก data/meteors.db.gz → meteors.db ถ้ายังไม่มี
+    แตก data/meteors.db.{xz,gz} → meteors.db ถ้ายังไม่มี
 
-    git เก็บเฉพาะตัว .gz (28 MB) — ตัวเต็ม 60 MB ใหญ่เกินกว่าที่ GitHub อยากเห็น
+    git เก็บเฉพาะตัวบีบอัด — ตัวเต็ม 60 MB ใหญ่เกินกว่าที่ GitHub อยากเห็น
     และ hoster ส่วนใหญ่ fs หายทุก restart → แตกใหม่ทุกครั้งที่บูต (0.3 วิ)
     เขียนลงไฟล์ชั่วคราวก่อนแล้ว rename — กันได้ไฟล์ครึ่งๆ ตอน process โดนฆ่ากลางคัน
+
+    **ห้ามเงียบ** ทุกเส้นทางที่จบด้วย False ต้องทิ้งเหตุผลไว้ใน _STATE["error"]
+    ก่อนหน้านี้ DB หาย = คืน False เฉยๆ → schedule ว่าง → ฟ้าโล่งทั้งรอบ
+    โดยไม่มี log สักบรรทัด หน้างานจริงหาสาเหตุไม่ได้เลย (ดู /health)
     """
-    if os.path.exists(C.DB_PATH):
+    if _STATE["ok"] and os.path.exists(C.DB_PATH):
         return True
-    src = C.DB_PATH + ".gz"
-    if not os.path.exists(src):
-        return False
-    import gzip
+
+    _STATE["checked_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    _STATE["db_path"] = C.DB_PATH
+    _STATE["error"] = None
+
+    if os.path.exists(C.DB_PATH):
+        _STATE["db_bytes"] = os.path.getsize(C.DB_PATH)
+        _STATE["ok"] = True
+        return True
+    _STATE["db_bytes"] = 0
+
     import shutil
-    tmp = C.DB_PATH + ".part"
-    os.makedirs(os.path.dirname(C.DB_PATH), exist_ok=True)
-    print("meteors.db ยังไม่มี — กำลังแตกจาก meteors.db.gz ...", flush=True)
-    with gzip.open(src, "rb") as f, open(tmp, "wb") as out:
-        shutil.copyfileobj(f, out, 1024 * 1024)
-    os.replace(tmp, C.DB_PATH)
-    print("แตกเสร็จ", flush=True)
-    return True
+    import time as _time
+
+    # .xz ก่อน — เล็กกว่า gzip เกือบ 10 MB และสำคัญคือมันต่ำกว่า
+    # เพดาน 25 MB ของการลากไฟล์อัปบนเว็บ GitHub (gzip 28.7 MB อัปไม่ผ่าน)
+    tried = []
+    for ext, opener in ((".xz", "lzma"), (".gz", "gzip")):
+        src = C.DB_PATH + ext
+        rec = {"path": src, "exists": os.path.exists(src), "bytes": 0, "result": None}
+        tried.append(rec)
+        if not rec["exists"]:
+            rec["result"] = "ไม่มีไฟล์นี้"
+            continue
+        rec["bytes"] = os.path.getsize(src)
+
+        mod = __import__(opener)
+        tmp = C.DB_PATH + ".part"
+        t0 = _time.time()
+        try:
+            os.makedirs(os.path.dirname(C.DB_PATH), exist_ok=True)
+            print(f"meteors.db ยังไม่มี — กำลังแตกจาก meteors.db{ext} ...", flush=True)
+            with mod.open(src, "rb") as f, open(tmp, "wb") as out:
+                shutil.copyfileobj(f, out, 1024 * 1024)
+            os.replace(tmp, C.DB_PATH)
+        except Exception as e:
+            # fs อ่านอย่างเดียว / ดิสก์เต็ม / ไฟล์บีบอัดพัง — ทั้งหมดมาโผล่ตรงนี้
+            rec["result"] = f"แตกไม่สำเร็จ: {type(e).__name__}: {e}"
+            _STATE["archives"] = tried
+            _STATE["error"] = rec["result"]
+            try:
+                if os.path.exists(tmp):
+                    os.remove(tmp)
+            except OSError:
+                pass
+            return False
+
+        rec["result"] = "ok"
+        _STATE["extract_sec"] = round(_time.time() - t0, 2)
+        _STATE["extracted_from"] = src
+        _STATE["db_bytes"] = os.path.getsize(C.DB_PATH)
+        _STATE["archives"] = tried
+        _STATE["ok"] = True
+        print(f"แตกเสร็จ ({_STATE['db_bytes']:,} bytes / {_STATE['extract_sec']} วิ)", flush=True)
+        return True
+
+    _STATE["archives"] = tried
+    _STATE["error"] = (
+        f"ไม่พบทั้ง {C.DB_PATH} และไฟล์บีบอัด "
+        + " / ".join(r["path"] for r in tried)
+    )
+    return False
 
 
 def available() -> bool:
     return _ensure_db()
 
 
+def last_error():
+    return _STATE["error"]
+
+
+def diagnostics() -> dict:
+    """
+    สถานะจริงของฐานข้อมูล — /health เอาไปโชว์
+
+    ต้องตอบได้ว่า "หาไฟล์ที่ path ไหน เจอไหม ใหญ่เท่าไร แตกแล้วผลเป็นยังไง"
+    ไม่ใช่แค่ available: false ซึ่งบอกอะไรไม่ได้เลยตอนอยู่หน้างาน
+    """
+    ok = _ensure_db()
+    d = {
+        "ok": ok,
+        "db_path": _STATE["db_path"] or C.DB_PATH,
+        "db_exists": os.path.exists(C.DB_PATH),
+        "db_bytes": _STATE["db_bytes"],
+        "extracted_from": _STATE["extracted_from"],
+        "extract_sec": _STATE["extract_sec"],
+        "archives": _STATE["archives"],
+        "checked_at": _STATE["checked_at"],
+        "error": _STATE["error"],
+        "cwd": os.getcwd(),
+    }
+    if ok:
+        try:
+            with _lock:
+                d["meteors"] = _conn().execute("SELECT COUNT(*) FROM meteors").fetchone()[0]
+        except Exception as e:
+            d["meteors"] = 0
+            d["error"] = f"เปิด DB ได้แต่ query ไม่ผ่าน: {type(e).__name__}: {e}"
+            d["ok"] = False
+    else:
+        d["meteors"] = 0
+    return d
+
+
+def report_to_log() -> bool:
+    """
+    พิมพ์สถานะ DB ลง log ตอนบูต — คืน True ถ้าพร้อมใช้จริง
+
+    DB หายแล้วเกมยังเปิดได้ เข้าห้องได้ กดเริ่มได้ แค่ไม่มีอุกกาบาต
+    ถ้าไม่ตะโกนตรงนี้ จะไม่มีใครรู้จนกว่าเด็กจะยืนงงหน้าจอที่ฟ้าโล่งทั้งรอบ
+    """
+    d = diagnostics()
+    if d["ok"] and d["meteors"] > 0:
+        print(f"[GMN] meteors.db พร้อมใช้ — {d['meteors']:,} ดวง "
+              f"({d['db_bytes']:,} bytes) ที่ {d['db_path']}", flush=True)
+        return True
+
+    bar = "!" * 72
+    print(bar, flush=True)
+    print("!! ฐานข้อมูลอุกกาบาตไม่พร้อม — รอบที่เริ่มตอนนี้จะไม่มีอุกกาบาตสักดวง", flush=True)
+    print(f"!!   คาดว่าจะเจอที่ : {d['db_path']}", flush=True)
+    print(f"!!   มีไฟล์จริงไหม  : {d['db_exists']}  ({d['db_bytes']:,} bytes)", flush=True)
+    print(f"!!   cwd            : {d['cwd']}", flush=True)
+    for r in d["archives"] or []:
+        print(f"!!   ไฟล์บีบอัด    : {r['path']}  exists={r['exists']} "
+              f"bytes={r['bytes']:,}  → {r['result']}", flush=True)
+    if not d["archives"]:
+        print("!!   ไฟล์บีบอัด    : ไม่ได้ตรวจ (เจอ meteors.db อยู่แล้วหรือยังไม่ถึงขั้นนั้น)",
+              flush=True)
+    print(f"!!   จำนวนแถว      : {d['meteors']:,}", flush=True)
+    print(f"!!   error         : {d['error']}", flush=True)
+    print("!!   วิธีเช็คซ้ำ    : เปิด /health แล้วดูฟิลด์ db", flush=True)
+    print(bar, flush=True)
+    return False
+
+
 def _conn():
     global _con
     if _con is None:
-        _ensure_db()
+        # ห้ามเรียกก่อน available() เป็น True
+        # sqlite3.connect() กับ path ที่ไม่มีไฟล์จะ *สร้างไฟล์เปล่า* ให้ทันที
+        # ทีนี้ os.path.exists() ก็จริงตลอดกาล → available() คืน True หลอกๆ
+        # แล้ว query ทุกอันพังด้วย "no such table: meteors" แทนที่จะบอกว่า DB หาย
+        if not os.path.exists(C.DB_PATH):
+            raise RuntimeError(f"ไม่มีไฟล์ฐานข้อมูลอุกกาบาตที่ {C.DB_PATH} "
+                               f"({_STATE['error'] or 'ไม่ทราบสาเหตุ'})")
         _con = sqlite3.connect(C.DB_PATH, check_same_thread=False)
         _con.row_factory = sqlite3.Row
     return _con

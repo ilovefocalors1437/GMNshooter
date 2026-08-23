@@ -17,6 +17,7 @@ server **ไม่มี game loop** — แค่ 3 อย่าง:
 import os
 import socket
 import json
+import threading
 
 from flask import Flask, render_template, send_from_directory, request, jsonify, Response
 from flask_socketio import SocketIO, join_room, leave_room
@@ -36,7 +37,28 @@ socketio = SocketIO(app, async_mode="threading", cors_allowed_origins="*",
                     ping_timeout=25, ping_interval=10)
 
 rooms = Rooms()
-_bg_started = False
+
+# ── สถานะตัวจับเวลาเบื้องหลัง ───────────────────────────
+# เดิมเป็น bool `_bg_started` ตัวเดียว ซึ่งเชื่อถือไม่ได้ 2 กรณี:
+#
+#   1. **fork** ถ้า hoster สั่ง gunicorn --preload โมดูลจะถูก import ใน master
+#      แล้วค่อย fork worker — เธรดไม่ข้าม fork มาด้วย (มีแต่เธรดที่เรียก fork
+#      เท่านั้นที่รอด) แต่ `_bg_started = True` *ข้ามมา* → worker คิดว่าตัวจับเวลา
+#      ทำงานอยู่ทั้งที่ไม่มี → รอบค้างที่ countdown ตลอดกาล ไม่มี tick สักตัว
+#      ไม่มีอุกกาบาตขึ้นเลย และไม่มี error ให้เห็น (เจอบน Render จริง)
+#   2. **เธรดตาย** exception หลุดออกจาก while True เมื่อไร ก็ไม่มีใครสตาร์ทใหม่
+#
+# เลยเก็บตัวเธรดกับ pid ไว้ตรงๆ แล้วเช็คของจริงทุกครั้งแทนการเชื่อ flag
+_watcher = {
+    "thread": None,
+    "pid": None,
+    "loops": 0,
+    "last_ms": 0.0,
+    "started_ms": 0.0,
+    "restarts": 0,
+    "error": None,
+}
+_watcher_lock = threading.Lock()
 
 
 def safe(fn):
@@ -71,10 +93,23 @@ def safe(fn):
 # ══════════════════════════════════════════════════════════
 @app.route("/health")
 def health():
-    """endpoint แรกที่ต้องมีตอน deploy (§9 C1.1) — hoster ใช้เช็คว่าแอปยังไม่ตาย"""
+    """
+    endpoint แรกที่ต้องมีตอน deploy (§9 C1.1) — hoster ใช้เช็คว่าแอปยังไม่ตาย
+
+    ต้องบอกสถานะ *ฐานข้อมูล* ด้วย ไม่ใช่แค่ ok:true
+    เพราะแอปที่ DB หายยังตอบ 200 ได้ทุกอย่าง เปิดเกมได้ เข้าห้องได้ กดเริ่มได้
+    ต่างกันแค่ฟ้าโล่งทั้งรอบ — ถ้า /health ไม่ฟ้อง จะไม่มีทางรู้ก่อนถึงหน้างาน
+    """
+    _ensure_bg()                      # เจอว่าตายเมื่อไร สตาร์ทใหม่ตรงนี้เลย
+    db = gmn_db.diagnostics()
+    w = watcher_status()
     return jsonify({
-        "ok": True,
-        "meteors": gmn_db.count() if gmn_db.available() else 0,
+        # ok = พร้อมจัดงานจริง ไม่ใช่แค่ process ยังไม่ตาย
+        # DB ครบแต่ตัวจับเวลาไม่เดิน = เกมค้าง countdown ไม่มีอุกกาบาต ต้องนับว่าไม่ ok
+        "ok": bool(db["ok"] and db["meteors"] > 0 and w["alive"] and not w["stalled"]),
+        "meteors": db["meteors"],
+        "db": db,
+        "watcher": w,
         "rooms": len(rooms.all()),
         "rounds_played": board.total_rounds(),
         "uptime_ms": round(now_ms()),
@@ -159,6 +194,7 @@ def _emit_room(room, event="room", extra=None):
 @safe
 def on_time_sync(data=None):
     """หา offset นาฬิกา — อุกกาบาตทุกดวงอ้างอิงเวลา server ตัวเดียว"""
+    _ensure_bg()      # client เรียกถี่ที่สุด ใช้เป็นจังหวะกู้ตัวจับเวลาได้ดีที่สุด
     socketio.emit("time_sync", {"c": (data or {}).get("c"), "s": now_ms()}, to=request.sid)
 
 
@@ -407,7 +443,34 @@ def _begin(room, who_sid):
     if not room.active():
         socketio.emit("error_msg", {"msg": "ยังไม่มีผู้เล่นในห้อง"}, to=who_sid)
         return False
-    room.start_round()
+
+    # ── ประตูข้อมูล ────────────────────────────────────────
+    # DB ไม่พร้อม = ไม่มีอุกกาบาตให้จัดตาราง ต้องบอกออกไป ไม่ใช่เริ่มรอบเงียบๆ
+    # แล้วปล่อยให้เด็กยืนมองฟ้าโล่ง 75 วินาที
+    # (ตาม CLAUDE.md: คิวว่าง = รอ/retry ไม่ใช่แต่งดวงปลอมขึ้นมาแทน)
+    db = gmn_db.diagnostics()
+    if not db["ok"] or db["meteors"] <= 0:
+        gmn_db.report_to_log()
+        socketio.emit("error_msg", {
+            "msg": "ไม่มีข้อมูลอุกกาบาต — ฐานข้อมูลไม่พร้อม เริ่มรอบไม่ได้",
+            "where": "db", "detail": db.get("error"),
+        }, to=who_sid)
+        return False
+
+    schedule = room.start_round()
+    if not schedule:
+        # DB พร้อมแต่จัดตารางไม่ได้สักดวง (เช่น ไม่มีเรดิแอนต์ดวงไหนอยู่บนฟ้ากรุงเทพ
+        # ในซุ้มยิงตอนนี้เลย) — ก็ยังห้ามเริ่ม ต้องบอกแล้วให้กดใหม่
+        room.to_lobby()
+        print("[GMN] ตารางอุกกาบาตว่าง ทั้งที่ DB มี "
+              f"{db['meteors']:,} แถว — ไม่เริ่มรอบ", flush=True)
+        socketio.emit("error_msg", {
+            "msg": "จัดตารางอุกกาบาตไม่ได้สักดวง — ลองกดเริ่มใหม่อีกครั้ง",
+            "where": "schedule",
+        }, to=who_sid)
+        _emit_room(room)
+        return False
+
     socketio.emit("round_start", _round_payload(room), to=room.code)
     _emit_room(room)
     return True
@@ -503,9 +566,28 @@ def on_disconnect(*_a):
 # ตัวจับเวลาจบรอบ (ไม่ใช่ game loop — เช็คแค่ว่าหมดเวลาหรือยัง)
 # ══════════════════════════════════════════════════════════
 def _round_watcher():
+    my_pid = os.getpid()
+    print(f"[watcher] เริ่มทำงาน pid={my_pid}", flush=True)
     while True:
         socketio.sleep(0.25)
-        for room in rooms.all():
+        # ถูกแทนที่ด้วยตัวใหม่แล้ว → ถอยออกไป ไม่งั้นสองตัววนพร้อมกัน
+        # แล้ว tick จะถูกส่งซ้ำ เวลาบน HUD ของเด็กจะกระตุก
+        if _watcher["thread"] is not threading.current_thread():
+            print(f"[watcher] pid={my_pid} ถูกแทนที่แล้ว — เลิกวน", flush=True)
+            return
+        # ครบหนึ่งรอบแล้วค่อยนับ — /health เอาไว้ดูว่ามันยังวนอยู่จริงไหม
+        _watcher["loops"] += 1
+        _watcher["last_ms"] = now_ms()
+        try:
+            all_rooms = rooms.all()
+        except Exception as e:
+            # เดิมบรรทัดนี้อยู่นอก try — โยน exception ทีเดียวเธรดตายทั้งตัว
+            # แล้วเกมจะค้างที่ countdown ตลอดกาลโดยไม่มีร่องรอย
+            import traceback
+            _watcher["error"] = f"rooms.all(): {type(e).__name__}: {e}"
+            traceback.print_exc()
+            continue
+        for room in all_rooms:
             try:
                 ev = room.tick()
                 if ev == "qte":
@@ -534,7 +616,9 @@ def _round_watcher():
                     room.to_lobby()
                     _emit_room(room)
             except Exception as e:      # ห้ามให้ห้องเดียวพังทั้ง watcher
-                print("round watcher:", e, flush=True)
+                import traceback
+                _watcher["error"] = f"{room.code}: {type(e).__name__}: {e}"
+                traceback.print_exc()
 
 
 def _finish_round(room):
@@ -570,11 +654,51 @@ def _finish_round(room):
     _emit_room(room)
 
 
+def watcher_status():
+    """สถานะตัวจับเวลา — /health อ่านจากตรงนี้
+
+    stalled = เธรดยังอยู่แต่ไม่ได้วนมานานผิดปกติ (ค้างที่ lock อะไรสักอย่าง)
+    ต่างจาก dead ตรงที่ dead คือไม่มีเธรดแล้ว ต้องแยกให้ออกเวลาหาสาเหตุ
+    """
+    t = _watcher["thread"]
+    alive = bool(t is not None and t.is_alive())
+    since = now_ms() - _watcher["last_ms"] if _watcher["loops"] else None
+    return {
+        "alive": alive,
+        "same_process": _watcher["pid"] == os.getpid(),
+        "watcher_pid": _watcher["pid"],
+        "pid": os.getpid(),
+        "loops": _watcher["loops"],
+        "last_loop_ago_ms": None if since is None else round(since),
+        "stalled": bool(alive and since is not None and since > 5000),
+        "started_ms": round(_watcher["started_ms"]),
+        "restarts": _watcher["restarts"],
+        "error": _watcher["error"],
+    }
+
+
 def _ensure_bg():
-    global _bg_started
-    if not _bg_started:
-        _bg_started = True
-        socketio.start_background_task(_round_watcher)
+    """
+    ตัวจับเวลาต้องมีอยู่จริง *ในโปรเซสนี้* — ห้ามเชื่อ flag
+
+    ไม่มีตัวนี้ = รอบไม่เคยเปลี่ยนจาก countdown เป็น playing
+    = client ไม่เริ่มนับเวลา = ไม่มีอุกกาบาตขึ้นสักดวงทั้งรอบ โดยไม่มี error ให้เห็น
+    """
+    with _watcher_lock:
+        t = _watcher["thread"]
+        ok = (t is not None and t.is_alive() and _watcher["pid"] == os.getpid())
+        if ok:
+            return
+        if t is not None:
+            _watcher["restarts"] += 1
+            print(f"[watcher] ตัวจับเวลาไม่อยู่ในโปรเซสนี้แล้ว "
+                  f"(alive={t.is_alive()} watcher_pid={_watcher['pid']} pid={os.getpid()}) "
+                  f"— สตาร์ทใหม่ ครั้งที่ {_watcher['restarts']}", flush=True)
+        _watcher["pid"] = os.getpid()
+        _watcher["loops"] = 0
+        _watcher["last_ms"] = now_ms()
+        _watcher["started_ms"] = now_ms()
+        _watcher["thread"] = socketio.start_background_task(_round_watcher)
 
 
 # ══════════════════════════════════════════════════════════
@@ -604,6 +728,9 @@ def bootstrap():
     (ต้อง worker เดียวเท่านั้น — ห้องเก็บใน RAM หลาย worker = คนละห้อง ดู Procfile)
     """
     _ensure_bg()
+    # ตะโกนสถานะ DB ลง log ทันทีที่ import — gunicorn ไม่เคยรัน __main__
+    # ถ้าไม่พิมพ์ตรงนี้ log บน hoster จะไม่มีร่องรอยเลยว่า DB หาย
+    gmn_db.report_to_log()
     return rooms.primary()
 
 
