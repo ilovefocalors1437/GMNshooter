@@ -91,7 +91,54 @@
   .dot { width:calc(4 * var(--u)); height:calc(4 * var(--u)); border-radius:50%; opacity:.3; margin-right:calc(1.4 * var(--u)); }
   .dot.on { opacity:1; }
 
-  #countdown { font-size:calc(32 * var(--u)); line-height:1; color:var(--accent); }
+  /* ══ Story Briefing Pane ══ */
+  #p-story {
+    padding:calc(4 * var(--u)); overflow-y:auto; justify-content:center;
+    background:radial-gradient(ellipse at 50% 20%, rgba(13,23,48,0.96) 0%, rgba(4,6,13,0.98) 75%);
+  }
+  .story-box {
+    width:100%; max-width:540px; background:rgba(8,16,32,0.85);
+    border:calc(0.4 * var(--u)) solid rgba(89,192,255,0.35);
+    border-radius:calc(2.4 * var(--u)); padding:calc(3.2 * var(--u));
+    display:flex; flex-direction:column; gap:1.6vh; text-align:left;
+    box-shadow:0 0 calc(5 * var(--u)) rgba(0,0,0,0.8);
+    animation:storyFadeIn .4s ease-out;
+  }
+  @keyframes storyFadeIn { from { opacity:0; transform:scale(0.95); } }
+  .story-hl { font-size:calc(6.2 * var(--u)); line-height:1.2; text-align:center; }
+  .story-body { display:flex; flex-direction:column; gap:1.2vh; }
+  .story-p { font-size:calc(3.1 * var(--u)); line-height:1.6; font-weight:400; opacity:.92; color:#d8e8ff; }
+  .story-p b { color:#fff; font-weight:700; }
+  .story-roles { display:grid; grid-template-columns:1fr 1fr; gap:calc(1.6 * var(--u)); margin-top:.4vh; }
+  .story-role-card {
+    background:rgba(255,255,255,0.05); border-radius:calc(1.4 * var(--u));
+    padding:calc(1.8 * var(--u)); border:1px solid rgba(255,255,255,0.12);
+  }
+  .story-role-card b { font-size:calc(3 * var(--u)); color:var(--accent); display:block; margin:.4vh 0; }
+  .story-role-card p { font-size:calc(2.3 * var(--u)); font-weight:400; opacity:.75; line-height:1.4; }
+  .sr-icon { font-size:calc(5 * var(--u)); }
+
+  .story-footer {
+    display:flex; flex-direction:column; align-items:center; gap:1.4vh; margin-top:.8vh;
+    border-top:1px solid rgba(255,255,255,0.12); padding-top:1.4vh; text-align:center;
+  }
+  .story-comms {
+    font-size:calc(2.6 * var(--u)); color:var(--good); display:flex; align-items:center; gap:calc(1 * var(--u));
+    letter-spacing:.08em; font-weight:700;
+  }
+  .pulse-dot {
+    width:calc(2 * var(--u)); height:calc(2 * var(--u)); border-radius:50%; background:var(--good);
+    box-shadow:0 0 calc(2 * var(--u)) var(--good); animation:pdot .8s infinite alternate;
+  }
+  @keyframes pdot { to { opacity:.3; transform:scale(0.8); } }
+  .story-count-box {
+    display:flex; align-items:baseline; justify-content:center; gap:calc(2 * var(--u));
+  }
+  .sc-label { font-size:calc(3.4 * var(--u)); opacity:.75; font-weight:400; }
+  #countdown {
+    font-size:calc(9 * var(--u)); line-height:1; color:var(--accent); font-weight:900;
+    font-variant-numeric:tabular-nums; text-shadow:0 0 calc(3 * var(--u)) var(--accent);
+  }
 
   /* ══ HUD ตอนเล่น ══ */
   #hud { position:fixed; inset:0; z-index:5; pointer-events:none; display:none; }
@@ -384,8 +431,39 @@
   <div class="sub" style="font-size:calc(3.2 * var(--u))">รหัสห้อง <b id="lobby-code">—</b></div>
 </div>
 
-<!-- 4. นับถอยหลัง -->
-<div id="p-count" class="pane"><div id="countdown">3</div></div>
+<!-- 4. Story Briefing & เสียงวิทยุ TTS ก่อนเริ่มเกม -->
+<div id="p-story" class="pane">
+  <div class="story-box">
+    <div class="mission-tag">🚨 MISSION BRIEFING // THAILAND CE-7 MOONSHOT</div>
+    <h1 class="story-hl">ภารกิจคุ้มกันยาน <span class="b">LONG MARCH 5</span></h1>
+    
+    <div class="story-body">
+      <p class="story-p">🇹🇭 <b>ศูนย์บัญชาการภารกิจ:</b> จรวด Long March 5 Y14 กำลังนำส่งยาน <b>Chang'e-7</b> พร้อมอุปกรณ์สัญชาติไทย <b>CE-7 MATCH</b> มุ่งหน้าสู่ขั้วใต้ของดวงจันทร์!</p>
+      
+      <div class="story-roles">
+        <div class="story-role-card">
+          <span class="sr-icon">📡</span>
+          <b>GROUND CREW</b>
+          <p>ตรวจจับและยิงสแกนสะเก็ดดาวจริงจากเครือข่าย GMN</p>
+        </div>
+        <div class="story-role-card">
+          <span class="sr-icon">🚀</span>
+          <b>FLIGHT OPS (PILOT)</b>
+          <p>รักษาระดับเกราะ 200 HP และกด Pulse Shield คุ้มกันยาน</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="story-footer">
+      <div class="story-comms"><span class="pulse-dot"></span> 🔊 <span id="tts-status">วิทยุศูนย์บัญชาการ (Thai Male Voice)</span></div>
+      <div class="story-count-box">
+        <span class="sc-label">เริ่มภารกิจใน</span>
+        <span id="countdown">8</span>
+      </div>
+      <button type="button" class="btn ghost" id="skip-story" style="font-size:calc(3.8 * var(--u));padding:calc(1.8 * var(--u)) calc(5 * var(--u))">พร้อมแล้ว (เริ่มทันที)</button>
+    </div>
+  </div>
+</div>
 
 <!-- 5. HUD ตอนเล่น -->
 <div id="hud">

@@ -1,11 +1,14 @@
-// mobile-main.js — Thailand CE-7 Moonshot x GMNshooter (Team Score & Dual-Role Co-op)
+// mobile-main.js — Thailand CE-7 Moonshot x GMNshooter (Story Briefing, Thai Male TTS & Team Co-op)
 //
-// 1. ระบบเลือก Role ในห้อง Lobby:
+// 1. Story Briefing Screen & Thai Male Voice TTS:
+//    - เล่า Story ความเป็นมาของภารกิจ Thailand CE-7 Moonshot & Long March 5
+//    - ระบบ TTS เสียงผู้ชายไทยสังเคราะห์เป็นวิทยุศูนย์บัญชาการ
+// 2. ระบบเลือก Role ในห้อง Lobby:
 //    - 📡 GROUND CREW: พลเลเซอร์ภาคพื้นดิน ยิงสแกนสะเก็ดดาว
 //    - 🚀 FLIGHT OPS / PILOT: ผู้ควบคุมยาน Long March 5 (จำกัด 1 คน) พร้อมสกิล Shield Pulse (+15 HP) & Orbital Beam
-// 2. ระบบคะแนนรวมของทั้งทีม (Team Score & Team Combo)
-// 3. ป้อมปืนและ Action การยิงของผู้เล่นทุกคนในทีม (Multi-Turret Sync)
-// 4. E-Certificate เกียรติยศระดับทีม "Thailand CE-7 Moonshot Flight & Ground Crew"
+// 3. ระบบคะแนนรวมของทั้งทีม (Team Score & Team Combo)
+// 4. ป้อมปืนและ Action การยิงของผู้เล่นทุกคนในทีม (Multi-Turret Sync)
+// 5. E-Certificate เกียรติยศระดับทีม "Thailand CE-7 Moonshot Flight & Ground Crew"
 
 import * as THREE from 'three';
 import { CFG, DEG, clamp, damp } from './config.js';
@@ -27,10 +30,52 @@ const QS = new URLSearchParams(location.search);
 const SPECTATE = QS.get('spectate') === '1';
 const ADMIN_MODE = QS.get('admin') === '1';
 const URL_CODE = (QS.get('code') || '').trim().toUpperCase();
-const panes = ['p-home', 'p-code', 'p-admin', 'p-name', 'p-lobby', 'p-count', 'p-sum'];
+const panes = ['p-home', 'p-code', 'p-admin', 'p-name', 'p-lobby', 'p-story', 'p-sum'];
 function pane(id) {
   panes.forEach(p => $(p).classList.toggle('on', p === id));
   $('hud').classList.toggle('on', id === null);
+}
+
+// ══ ระบบเสียงบรรยายภาษาไทย (Thai Male TTS) ═════════════════
+function playThaiMaleTTS(text) {
+  if (!('speechSynthesis' in window)) return;
+  try {
+    window.speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = 'th-TH';
+    u.rate = 1.04;
+    u.pitch = 0.82; // โทนเสียงทุ้มลึกจำลองนายทหารศูนย์บัญชาการอวกาศ
+
+    const voices = window.speechSynthesis.getVoices();
+    const thVoice = voices.find(v => (v.lang === 'th-TH' || v.lang === 'th' || v.lang.startsWith('th')) &&
+      (v.name.toLowerCase().includes('male') || v.name.includes('ชาย') || v.name.includes('Niwat') || v.name.includes('Pattara') || v.name.includes('Krittipat') || v.name.includes('Wichai')));
+
+    if (thVoice) {
+      u.voice = thVoice;
+    } else {
+      const anyTh = voices.find(v => v.lang === 'th-TH' || v.lang === 'th' || v.lang.startsWith('th'));
+      if (anyTh) u.voice = anyTh;
+    }
+
+    u.onstart = () => {
+      const st = $('tts-status');
+      if (st) st.textContent = 'วิทยุศูนย์บัญชาการ: กำลังถ่ายทอดคำสั่ง...';
+    };
+    u.onend = () => {
+      const st = $('tts-status');
+      if (st) st.textContent = 'วิทยุศูนย์บัญชาการ: พร้อมปฏิบัติการ';
+    };
+
+    window.speechSynthesis.speak(u);
+  } catch (e) {
+    console.warn('[tts] speak error:', e);
+  }
+}
+
+if ('speechSynthesis' in window) {
+  window.speechSynthesis.onvoiceschanged = () => {
+    window.speechSynthesis.getVoices();
+  };
 }
 
 // ══ สถานะ ═════════════════════════════════════════════════
@@ -49,9 +94,7 @@ const S = {
   lastShieldPulseAt: -1e9,
   lastAimEmit: 0,
   spectator: SPECTATE,
-  // ยานอวกาศ & เกราะ
   shipHp: 200, shipMaxHp: 200,
-  // QTE ปิดท้ายรอบ
   qteOn: false, qteNeed: 0, qteHits: 0, qteEndMs: 0, qteMeteorId: 0,
 };
 const serverNow = () => performance.now() + S.offset;
@@ -125,7 +168,7 @@ sock.on('error_msg', d => {
 sock.on('name_set', d => { S.name = d.name; $('lobby-name').textContent = d.name; pane('p-lobby'); });
 
 // ══ จัดการป้อมปืนเพื่อนร่วมทีม (Multi-Turret Sync) ═════════
-const otherTurrets = new Map(); // slot -> TurretRig
+const otherTurrets = new Map();
 
 function syncTeammateTurrets(players = []) {
   for (const p of players) {
@@ -246,6 +289,7 @@ sock.on('ship_damage', d => {
   setTimeout(() => document.body.classList.remove('hit-flash'), 180);
 });
 
+// ══ เริ่มรอบ: แสดง Story Briefing + เสียงพากย์ TTS ═════════════
 sock.on('round_start', d => {
   S.stormStartSec = d.stormStartSec; S.stormPassRate = d.stormPassRate;
   S.stormMinScale = d.stormMinScale; S.phase = 'normal';
@@ -267,8 +311,15 @@ sock.on('round_start', d => {
   tracers.reset();
   juice.reset();
   S.playing = true;
-  pane('p-count');
+
+  pane('p-story');
   sfx.resume();
+  sfx.radioBeep();
+
+  // เสียงวิทยุคำสั่งศูนย์บัญชาการภารกิจ
+  const storySpeech = "ศูนย์บัญชาการแจ้งเตือน! ภารกิจ Thailand CE-7 Moonshot กำลังจะเริ่มต้นขึ้น จรวด Long March 5 กำลังนำส่งอุปกรณ์ไทย CE-7 MATCH สู่ดวงจันทร์ ขอให้ทีมภาคพื้นดินและผู้ควบคุมยาน ประจำตำแหน่งและเตรียมพร้อมยิงสกัดกั้นสะเก็ดดาวทันที!";
+  playThaiMaleTTS(storySpeech);
+
   paintShipHp();
   updateRoleUi();
   syncTeammateTurrets(d.players || []);
@@ -475,6 +526,12 @@ $('role-spaceship').onclick = () => {
   sock.emit('select_role', { role: 'spaceship' });
 };
 
+// ปุ่มข้าม Story เข้าเกมทันที
+$('skip-story').onclick = () => {
+  if (window.speechSynthesis) window.speechSynthesis.cancel();
+  pane(null);
+};
+
 // สกิล Pulse Shield ของคนคุมยาน
 $('pulse-shield-btn').onclick = () => {
   const now = performance.now();
@@ -647,7 +704,6 @@ function fire() {
   rig.getMuzzle(_mp, _md);
   const { target } = pickTarget();
 
-  // ถ้าเป็นคนคุมยาน (Pilot) เลเซอร์จะยิงแบบ Orbital Beam จากแนวสูง
   let spawnPos = _mp;
   if (S.role === 'spaceship' && spaceEnv && spaceEnv.rocket) {
     spawnPos = spaceEnv.rocket.position.clone();
@@ -774,10 +830,11 @@ function frame(nowReal) {
 
   const t = serverNow();
 
-  // countdown → เริ่มเล่น
+  // Story Briefing / Countdown Transition
   if (S.playing && t < S.startMs) {
-    $('countdown').textContent = Math.max(1, Math.ceil((S.startMs - t) / 1000));
-  } else if (S.playing && $('p-count').classList.contains('on')) {
+    const left = Math.max(1, Math.ceil((S.startMs - t) / 1000));
+    $('countdown').textContent = left;
+  } else if (S.playing && $('p-story').classList.contains('on')) {
     pane(null);
   }
 

@@ -68,7 +68,7 @@ SHIP_MIN_DAMAGE = 4          # ดาเมจต่ำสุดของอุ�
 SHIP_MAX_DAMAGE = 20         # ดาเมจสูงสุดของอุกกาบาตความเร็วสูง (70+ km/s)
 SHIP_DMG_SPEED_DIV = 3.6     # Damage = min(20, max(4, round(v_init / 3.6)))
 
-COUNTDOWN_SEC = 3
+COUNTDOWN_SEC = 8            # 8 วินาทีสำหรับ Story Briefing & เสียงบรรยาย TTS ก่อนเริ่มยิงจริง
 # จบรอบแล้วกี่วินาทีถึงกลับ lobby เอง — บูธจะได้ต่อคิวรอบถัดไปโดยไม่ต้องกดอะไร
 RESET_AFTER_SEC = 25
 ROOM_TTL_SEC = 900           # ห้องร้างเกินนี้เก็บทิ้ง

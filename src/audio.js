@@ -133,6 +133,12 @@ export class Sfx {
     this._noise({ dur, gain: CFG.audio.whistleVolume * 0.45, type: 'bandpass', f0: 2600, f1: 800, q: 8, pan });
   }
 
+  radioBeep() {
+    if (!this.ready) return;
+    this._tone({ dur: 0.08, gain: 0.25, type: 'sine', f0: 880, f1: 880 });
+    this._tone({ dur: 0.12, gain: 0.25, type: 'sine', f0: 1760, f1: 1760, delay: 0.08 });
+  }
+
   gameOver() {
     if (!this.ready) return;
     this._tone({ dur: 1.5, gain: 0.5, type: 'sine', f0: 220, f1: 42 });
