@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="theme-color" content="#04060d">
+<meta name="theme-color" content="#02040a">
 <title>GMNshooter — Thailand CE-7 Moonshot</title>
 
 <script type="importmap">
@@ -17,12 +17,12 @@
 
 <style>
   :root {
-    --accent:#59c0ff; --danger:#ff4d6d; --good:#8fffa8; --me:#59c0ff;
+    --accent:#59c0ff; --danger:#ff4d6d; --good:#8fffa8; --gold:#ffe066; --me:#59c0ff;
     --u: min(1vw, 0.52vh);
   }
   * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
   html, body {
-    height:100%; width:100%; overflow:hidden; background:#04060d; color:#fff;
+    height:100%; width:100%; overflow:hidden; background:#02040a; color:#fff;
     font-family:"Bahnschrift","Segoe UI",system-ui,sans-serif; font-weight:700;
     touch-action:none; user-select:none; -webkit-user-select:none; overscroll-behavior:none;
   }
@@ -91,54 +91,84 @@
   .dot { width:calc(4 * var(--u)); height:calc(4 * var(--u)); border-radius:50%; opacity:.3; margin-right:calc(1.4 * var(--u)); }
   .dot.on { opacity:1; }
 
-  /* ══ Story Briefing Pane ══ */
+  /* ══ Full Black Screen Cinematic Story Timeline ══ */
   #p-story {
-    padding:calc(4 * var(--u)); overflow-y:auto; justify-content:center;
-    background:radial-gradient(ellipse at 50% 20%, rgba(13,23,48,0.96) 0%, rgba(4,6,13,0.98) 75%);
+    background: #02040a radial-gradient(circle at 50% 30%, #061024 0%, #010206 80%);
+    padding: calc(4 * var(--u)) calc(5 * var(--u));
+    overflow-y: auto; justify-content: space-between; z-index: 25;
   }
-  .story-box {
-    width:100%; max-width:540px; background:rgba(8,16,32,0.85);
-    border:calc(0.4 * var(--u)) solid rgba(89,192,255,0.35);
-    border-radius:calc(2.4 * var(--u)); padding:calc(3.2 * var(--u));
-    display:flex; flex-direction:column; gap:1.6vh; text-align:left;
-    box-shadow:0 0 calc(5 * var(--u)) rgba(0,0,0,0.8);
-    animation:storyFadeIn .4s ease-out;
+  .cinematic-box {
+    width: 100%; max-width: 680px; margin: auto;
+    display: flex; flex-direction: column; gap: 2vh; text-align: center;
   }
-  @keyframes storyFadeIn { from { opacity:0; transform:scale(0.95); } }
-  .story-hl { font-size:calc(6.2 * var(--u)); line-height:1.2; text-align:center; }
-  .story-body { display:flex; flex-direction:column; gap:1.2vh; }
-  .story-p { font-size:calc(3.1 * var(--u)); line-height:1.6; font-weight:400; opacity:.92; color:#d8e8ff; }
-  .story-p b { color:#fff; font-weight:700; }
-  .story-roles { display:grid; grid-template-columns:1fr 1fr; gap:calc(1.6 * var(--u)); margin-top:.4vh; }
-  .story-role-card {
-    background:rgba(255,255,255,0.05); border-radius:calc(1.4 * var(--u));
-    padding:calc(1.8 * var(--u)); border:1px solid rgba(255,255,255,0.12);
+  .cinematic-badge {
+    font-size: calc(2.6 * var(--u)); letter-spacing: 0.22em; color: var(--accent);
+    padding: calc(0.8 * var(--u)) calc(2.4 * var(--u)); border-radius: calc(2 * var(--u));
+    background: rgba(89, 192, 255, 0.12); border: 1px solid rgba(89, 192, 255, 0.35);
+    margin: 0 auto; display: inline-block;
   }
-  .story-role-card b { font-size:calc(3 * var(--u)); color:var(--accent); display:block; margin:.4vh 0; }
-  .story-role-card p { font-size:calc(2.3 * var(--u)); font-weight:400; opacity:.75; line-height:1.4; }
-  .sr-icon { font-size:calc(5 * var(--u)); }
+  .cinematic-title {
+    font-size: calc(7.5 * var(--u)); line-height: 1.25; letter-spacing: 0.04em;
+    color: #fff; text-shadow: 0 0 calc(3 * var(--u)) rgba(89, 192, 255, 0.4);
+  }
+  .cinematic-body {
+    font-size: calc(3.4 * var(--u)); line-height: 1.8; font-weight: 400; color: #d0e2ff;
+    padding: calc(1 * var(--u)) calc(2 * var(--u)); min-height: 16vh;
+    display: flex; flex-direction: column; justify-content: center;
+  }
+  .cinematic-body b { color: #fff; font-weight: 700; }
+  .hl { color: var(--accent); font-weight: 700; }
+  .hl-gold { color: var(--gold); font-weight: 700; }
+  .hl-red { color: var(--danger); font-weight: 700; }
 
-  .story-footer {
-    display:flex; flex-direction:column; align-items:center; gap:1.4vh; margin-top:.8vh;
-    border-top:1px solid rgba(255,255,255,0.12); padding-top:1.4vh; text-align:center;
+  .story-duo {
+    display: grid; grid-template-columns: 1fr 1fr; gap: calc(2 * var(--u)); margin-top: 1vh;
   }
-  .story-comms {
-    font-size:calc(2.6 * var(--u)); color:var(--good); display:flex; align-items:center; gap:calc(1 * var(--u));
-    letter-spacing:.08em; font-weight:700;
+  .s-duo-card {
+    background: rgba(255, 255, 255, 0.04); border: 1px solid rgba(89, 192, 255, 0.2);
+    border-radius: calc(1.8 * var(--u)); padding: calc(2 * var(--u)); text-align: center;
+  }
+  .s-duo-card b { display: block; font-size: calc(3.1 * var(--u)); color: var(--accent); margin: 0.6vh 0 0.4vh; }
+  .s-duo-card p { font-size: calc(2.4 * var(--u)); opacity: 0.8; font-weight: 400; line-height: 1.4; }
+  .s-duo-icon { font-size: calc(6 * var(--u)); }
+
+  .launch-cd {
+    font-size: calc(6.5 * var(--u)); font-weight: 900; color: var(--gold);
+    letter-spacing: 0.16em; margin-top: 1vh;
+    animation: cdPulse 0.6s infinite alternate;
+  }
+  @keyframes cdPulse { to { transform: scale(1.06); filter: brightness(1.3); } }
+
+  /* ── Story Controls & Progress Dots ── */
+  .story-nav-bar {
+    width: 100%; max-width: 680px; margin: 0 auto;
+    display: flex; flex-direction: column; align-items: center; gap: 1.6vh;
+    border-top: 1px solid rgba(255, 255, 255, 0.1); padding-top: 1.8vh;
+  }
+  .story-dots { display: flex; gap: calc(1.6 * var(--u)); }
+  .story-dot {
+    width: calc(2.4 * var(--u)); height: calc(2.4 * var(--u)); border-radius: 50%;
+    background: rgba(255, 255, 255, 0.2); transition: all 0.25s ease-out;
+  }
+  .story-dot.on {
+    background: var(--accent); transform: scale(1.35);
+    box-shadow: 0 0 calc(2 * var(--u)) var(--accent);
+  }
+
+  .story-actions {
+    display: flex; justify-content: space-between; align-items: center; width: 100%;
+  }
+  .story-comms-status {
+    font-size: calc(2.6 * var(--u)); color: var(--good); display: flex; align-items: center;
+    gap: calc(1 * var(--u)); font-weight: 700;
   }
   .pulse-dot {
-    width:calc(2 * var(--u)); height:calc(2 * var(--u)); border-radius:50%; background:var(--good);
-    box-shadow:0 0 calc(2 * var(--u)) var(--good); animation:pdot .8s infinite alternate;
+    width: calc(2 * var(--u)); height: calc(2 * var(--u)); border-radius: 50%; background: var(--good);
+    box-shadow: 0 0 calc(2 * var(--u)) var(--good); animation: pdot 0.8s infinite alternate;
   }
-  @keyframes pdot { to { opacity:.3; transform:scale(0.8); } }
-  .story-count-box {
-    display:flex; align-items:baseline; justify-content:center; gap:calc(2 * var(--u));
-  }
-  .sc-label { font-size:calc(3.4 * var(--u)); opacity:.75; font-weight:400; }
-  #countdown {
-    font-size:calc(9 * var(--u)); line-height:1; color:var(--accent); font-weight:900;
-    font-variant-numeric:tabular-nums; text-shadow:0 0 calc(3 * var(--u)) var(--accent);
-  }
+  @keyframes pdot { to { opacity: 0.3; transform: scale(0.8); } }
+
+  .story-btn-group { display: flex; gap: calc(1.4 * var(--u)); }
 
   /* ══ HUD ตอนเล่น ══ */
   #hud { position:fixed; inset:0; z-index:5; pointer-events:none; display:none; }
@@ -502,36 +532,37 @@
   <div class="sub" style="font-size:calc(3.2 * var(--u))">รหัสห้อง <b id="lobby-code">—</b></div>
 </div>
 
-<!-- 4. Story Briefing & เสียงวิทยุ TTS ก่อนเริ่มเกม -->
+<!-- 4. Full Black Screen Cinematic Story Timeline -->
 <div id="p-story" class="pane">
-  <div class="story-box">
-    <div class="mission-tag">🚨 MISSION BRIEFING // THAILAND CE-7 MOONSHOT</div>
-    <h1 class="story-hl">ภารกิจคุ้มกันยาน <span class="b">LONG MARCH 5</span></h1>
-    
-    <div class="story-body">
-      <p class="story-p">🇹🇭 <b>ศูนย์บัญชาการภารกิจ:</b> จรวด Long March 5 Y14 กำลังนำส่งยาน <b>Chang'e-7</b> พร้อมอุปกรณ์สัญชาติไทย <b>CE-7 MATCH</b> มุ่งหน้าสู่ขั้วใต้ของดวงจันทร์!</p>
-      
-      <div class="story-roles">
-        <div class="story-role-card">
-          <span class="sr-icon">📡</span>
-          <b>GROUND CREW</b>
-          <p>ตรวจจับและยิงสแกนสะเก็ดดาวจริงจากเครือข่าย GMN</p>
-        </div>
-        <div class="story-role-card">
-          <span class="sr-icon">🚀</span>
-          <b>FLIGHT OPS (PILOT)</b>
-          <p>บังคับเลี้ยวทิศทางยาน บินลอดวงแหวนนำร่องสู่ดวงจันทร์</p>
-        </div>
-      </div>
+  <div class="cinematic-box">
+    <div class="cinematic-badge" id="story-badge">🇹🇭 NARIT SPACE OPERATION CENTER // จุดเริ่มต้นประวัติศาสตร์</div>
+    <h1 class="cinematic-title" id="story-title">โครงการ <span class="hl">THAILAND MOONSHOT</span></h1>
+    <div class="cinematic-body" id="story-body">
+      พ.ศ. 2569 — ก้าวสำคัญทางประวัติศาสตร์ของวงการดาราศาสตร์และอวกาศไทย<br><br>
+      <b>สถาบันวิจัยดาราศาสตร์แห่งชาติ (NARIT)</b> ร่วมกับนักวิทยาศาสตร์ไทย<br>
+      ได้พัฒนาอุปกรณ์สัญชาติไทย <span class="hl-gold">“CE-7 MATCH”</span> สำเร็จ<br>
+      เพื่อออกเดินทางสู่ขั้วใต้ของดวงจันทร์ ไปพร้อมกับภารกิจระดับโลก <b>Chang'e-7</b>
+    </div>
+  </div>
+
+  <div class="story-nav-bar">
+    <div class="story-dots" id="story-dots">
+      <div class="story-dot on"></div>
+      <div class="story-dot"></div>
+      <div class="story-dot"></div>
+      <div class="story-dot"></div>
     </div>
 
-    <div class="story-footer">
-      <div class="story-comms"><span class="pulse-dot"></span> 🔊 <span id="tts-status">วิทยุศูนย์บัญชาการ (Thai Male Voice)</span></div>
-      <div class="story-count-box">
-        <span class="sc-label">เริ่มภารกิจใน</span>
-        <span id="countdown">8</span>
+    <div class="story-actions">
+      <div class="story-comms-status">
+        <span class="pulse-dot"></span> 🔊 <span id="tts-status">วิทยุศูนย์บัญชาการ NARIT (Thai Voice)</span>
       </div>
-      <button type="button" class="btn ghost" id="skip-story" style="font-size:calc(3.8 * var(--u));padding:calc(1.8 * var(--u)) calc(5 * var(--u))">พร้อมแล้ว (เริ่มทันที)</button>
+
+      <div class="story-btn-group">
+        <button type="button" class="btn ghost" id="story-prev" style="font-size:calc(3.2 * var(--u));padding:calc(1.4 * var(--u)) calc(3 * var(--u))">ย้อนกลับ</button>
+        <button type="button" class="btn ghost" id="story-next" style="font-size:calc(3.2 * var(--u));padding:calc(1.4 * var(--u)) calc(3.4 * var(--u))">ถัดไป ➡️</button>
+        <button type="button" class="btn" id="skip-story" style="font-size:calc(3.2 * var(--u));padding:calc(1.4 * var(--u)) calc(3.8 * var(--u))">⚡ เริ่มเกมทันที (<span id="countdown">16</span>s)</button>
+      </div>
     </div>
   </div>
 </div>

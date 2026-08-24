@@ -1,10 +1,10 @@
-// mobile-main.js — Thailand CE-7 Moonshot x GMNshooter (Pilot Flight Controls, Lunar Navigation & Team Co-op)
+// mobile-main.js — Thailand CE-7 Moonshot x GMNshooter (Cinematic Story Opening, Pilot Flight Controls & Team Co-op)
 //
-// 1. Dual Role Gameplay:
+// 1. Full Black Screen Cinematic Story Sequence (4-Act Timeline with Thai Male Voice TTS)
+// 2. Dual Role Gameplay:
 //    - 🚀 FLIGHT OPS (PILOT): บังคับทิศทางยาน Long March 5 บินในอวกาศ (W/A/S/D / Flight Stick)
 //      ระบบนำร่องสู่ดวงจันทร์ (Distance to Moon KM / Lunar Waypoint Rings / Boost Thrusters / Pulse Shield)
 //    - 📡 GROUND CREW: พลเลเซอร์ภาคพื้นดิน ยิงสแกน/สกัดกั้นสะเก็ดดาว GMN คุ้มกันแนวบินยาน
-// 2. Story Briefing Screen & Thai Male Voice TTS
 // 3. ระบบคะแนนรวมของทั้งทีม (Team Score & Team Combo)
 // 4. Multi-Turret Sync & Real-time Spacecraft Flight Sync
 // 5. E-Certificate เกียรติยศระดับทีม
@@ -77,6 +77,99 @@ if ('speechSynthesis' in window) {
   };
 }
 
+// ══ 4-Act Cinematic Story Timeline Lore ════════════════════
+const STORY_ACTS = [
+  {
+    act: 1,
+    badge: "🇹🇭 NARIT SPACE OPERATION CENTER // จุดเริ่มต้นประวัติศาสตร์",
+    title: "โครงการ <span class='hl'>THAILAND MOONSHOT</span>",
+    body: `พ.ศ. 2569 — ก้าวสำคัญทางประวัติศาสตร์ของวงการดาราศาสตร์และอวกาศไทย<br><br>
+           <b>สถาบันวิจัยดาราศาสตร์แห่งชาติ (NARIT)</b> ร่วมกับนักวิทยาศาสตร์ไทย<br>
+           ได้พัฒนาอุปกรณ์สัญชาติไทย <span class='hl-gold'>“CE-7 MATCH”</span> สำเร็จ<br>
+           เพื่อออกเดินทางสู่ขั้วใต้ของดวงจันทร์ ไปพร้อมกับภารกิจระดับโลก <b>Chang'e-7</b>`,
+    speech: "ศูนย์บัญชาการปฏิบัติการอวกาศ NARIT... นี่คือก้าวสำคัญทางประวัติศาสตร์ของประเทศไทย อุปกรณ์สำรวจดวงจันทร์ CE-7 MATCH พร้อมแล้วสำหรับการเดินทางสู่ขั้วใต้ของดวงจันทร์",
+  },
+  {
+    act: 2,
+    badge: "⚠️ TRAJECTORY WARNING // ระดับความสูง 80 - 100 KM",
+    title: "วิกฤต <span class='hl-red'>พายุสะเก็ดดาวความเร็วสูง</span>",
+    body: `จรวดขนส่งยักษ์ <b>Long March 5</b> กำลังนำส่งยานและอุปกรณ์ไทยข้ามผ่านชั้นบรรยากาศโลก<br><br>
+           แต่ในระดับความสูง <b>80–100 กิโลเมตร</b> ระบบเรดาร์ตรวจพบกลุ่มสะเก็ดดาวจริงจากเครือข่าย <span class='hl'>Global Meteor Network (GMN)</span><br>
+           พุ่งเข้าปะทะแนววิถีบินด้วยความเร็วสูงถึง <span class='hl-red'>72 กิโลเมตรต่อวินาที!</span>`,
+    speech: "จรวด Long March 5 กำลังไต่ระดับความสูง... ตรวจพบกลุ่มฝนดาวตกความเร็วสูง กำลังพุ่งตัดแนววิถีบินของยาน หากเกราะพลังงานถูกทำลาย ภารกิจสู่ดวงจันทร์จะล้มเหลวทันที!",
+  },
+  {
+    act: 3,
+    badge: "🤝 OPERATION PROTOCOL // การประสานงาน 2 หน่วย",
+    title: "รวมพลัง <span class='hl'>ภาคพื้นดิน & ผู้ควบคุมยาน</span>",
+    body: `<div class='story-duo'>
+             <div class='s-duo-card'>
+               <div class='s-duo-icon'>📡</div>
+               <b>GROUND CREW (ภาคพื้น)</b>
+               <p>ใช้ข้อมูลกล้อง GMN ทั่วโลก เล็งยิงสแกนทำลายสะเก็ดดาวเปิดทางบิน</p>
+             </div>
+             <div class='s-duo-card'>
+               <div class='s-duo-icon'>🚀</div>
+               <b>FLIGHT OPS (คนคุมยาน)</b>
+               <p>บังคับเลี้ยวทิศทางยาน บินลอดวงแหวนนำร่องสู่ดวงจันทร์ และเปิดเกราะสะท้อน</p>
+             </div>
+           </div>`,
+    speech: "ขอให้ทีมภาคพื้นดิน ประจำสถานีเลเซอร์ ยิงสกัดกั้นสะเก็ดดาวทันที! และผู้ควบคุมยาน บังคับทิศทางยานตามเส้นทางนำร่องสู่ดวงจันทร์ให้ปลอดภัย!",
+  },
+  {
+    act: 4,
+    badge: "🚀 MISSION INITIATION // สัญญาณปล่อยตัว",
+    title: "ทุกหน่วยประจำตำแหน่ง <span class='hl-gold'>เริ่มภารกิจ!</span>",
+    body: `ชะตากรรมของอุปกรณ์ไทย <b>CE-7 MATCH</b> และการเดินทางสู่ดวงจันทร์...<br>
+           ขึ้นอยู่กับความร่วมมือของพวกเราทุกคน!<br><br>
+           <div class='launch-cd'>3 ... 2 ... 1 ... <b>LAUNCH!</b></div>`,
+    speech: "ทุกหน่วยเข้าประจำตำแหน่ง... เริ่มต้นภารกิจ ณ บัดนี้!",
+  }
+];
+
+let currentStoryAct = 0;
+let storyTimer = null;
+
+function renderStoryAct(idx, playVoice = true) {
+  currentStoryAct = clamp(idx, 0, STORY_ACTS.length - 1);
+  const act = STORY_ACTS[currentStoryAct];
+  $('story-badge').innerHTML = act.badge;
+  $('story-title').innerHTML = act.title;
+  $('story-body').innerHTML = act.body;
+
+  const dots = $('story-dots')?.children || [];
+  for (let i = 0; i < dots.length; i++) {
+    dots[i].classList.toggle('on', i === currentStoryAct);
+  }
+
+  $('story-prev').style.visibility = currentStoryAct > 0 ? 'visible' : 'hidden';
+  $('story-next').textContent = currentStoryAct === STORY_ACTS.length - 1 ? 'พร้อมลุย 🚀' : 'ถัดไป ➡️';
+
+  sfx.radioBeep();
+  if (playVoice) {
+    playThaiMaleTTS(act.speech);
+  }
+}
+
+function startCinematicStory() {
+  currentStoryAct = 0;
+  pane('p-story');
+  renderStoryAct(0, true);
+
+  if (storyTimer) clearInterval(storyTimer);
+  storyTimer = setInterval(() => {
+    if (!S.playing || !$('p-story').classList.contains('on')) {
+      clearInterval(storyTimer);
+      return;
+    }
+    if (currentStoryAct < STORY_ACTS.length - 1) {
+      renderStoryAct(currentStoryAct + 1, true);
+    } else {
+      clearInterval(storyTimer);
+    }
+  }, 3800);
+}
+
 // ══ สถานะ ═════════════════════════════════════════════════
 const S = {
   token: null, slot: 0, hex: '#59c0ff', rgb: [0.35, 0.75, 1],
@@ -97,7 +190,6 @@ const S = {
   shipHp: 200, shipMaxHp: 200,
   qteOn: false, qteNeed: 0, qteHits: 0, qteEndMs: 0, qteMeteorId: 0,
 
-  // การบังคับยานของคนคุมยาน
   pilotSteerX: 0,
   pilotSteerY: 0,
   pilotBoost: false,
@@ -316,7 +408,7 @@ sock.on('ship_damage', d => {
   setTimeout(() => document.body.classList.remove('hit-flash'), 180);
 });
 
-// ══ เริ่มรอบ: แสดง Story Briefing + เสียงพากย์ TTS ═════════════
+// ══ เริ่มรอบ: แสดง 4-Act Cinematic Story + เสียงพากย์ TTS ══════
 sock.on('round_start', d => {
   S.stormStartSec = d.stormStartSec; S.stormPassRate = d.stormPassRate;
   S.stormMinScale = d.stormMinScale; S.phase = 'normal';
@@ -340,12 +432,8 @@ sock.on('round_start', d => {
   spaceEnv.resetNavRings();
   S.playing = true;
 
-  pane('p-story');
   sfx.resume();
-  sfx.radioBeep();
-
-  const storySpeech = "ศูนย์บัญชาการแจ้งเตือน! ภารกิจ Thailand CE-7 Moonshot กำลังจะเริ่มต้นขึ้น จรวด Long March 5 กำลังนำส่งอุปกรณ์ไทย CE-7 MATCH สู่ดวงจันทร์ ขอให้ทีมภาคพื้นดินและผู้ควบคุมยาน ประจำตำแหน่งและเตรียมพร้อมยิงสกัดกั้นสะเก็ดดาวทันที!";
-  playThaiMaleTTS(storySpeech);
+  startCinematicStory();
 
   paintShipHp();
   updateRoleUi();
@@ -553,8 +641,19 @@ $('role-spaceship').onclick = () => {
   sock.emit('select_role', { role: 'spaceship' });
 };
 
-// ปุ่มข้าม Story เข้าเกมทันที
+// ปุ่มควบคุม Cinematic Story
+$('story-prev').onclick = () => {
+  if (currentStoryAct > 0) renderStoryAct(currentStoryAct - 1, true);
+};
+$('story-next').onclick = () => {
+  if (currentStoryAct < STORY_ACTS.length - 1) {
+    renderStoryAct(currentStoryAct + 1, true);
+  } else {
+    $('skip-story').click();
+  }
+};
 $('skip-story').onclick = () => {
+  if (storyTimer) clearInterval(storyTimer);
   if (window.speechSynthesis) window.speechSynthesis.cancel();
   pane(null);
 };
@@ -907,7 +1006,6 @@ function paintShipHp() {
       : `${spaceEnv.rocketAltKm.toFixed(0)} km`;
   }
 
-  // อัปเดต Pilot Navigation Dashboard
   if (S.role === 'spaceship' && spaceEnv) {
     const distEl = $('pnd-moon-dist');
     const spdEl = $('pnd-flight-speed');
@@ -956,6 +1054,8 @@ function frame(nowReal) {
     const left = Math.max(1, Math.ceil((S.startMs - t) / 1000));
     $('countdown').textContent = left;
   } else if (S.playing && $('p-story').classList.contains('on')) {
+    if (storyTimer) clearInterval(storyTimer);
+    if (window.speechSynthesis) window.speechSynthesis.cancel();
     pane(null);
   }
 
@@ -983,23 +1083,19 @@ function frame(nowReal) {
 
     spaceEnv.setSteer(sx, sy, boost);
 
-    // ตรวจสอบการบินผ่านวงแหวนนำร่องสู่ดวงจันทร์
     if (S.playing) {
       spaceEnv.checkNavRingPassed(ring => {
         sock.emit('nav_waypoint', { ringId: ring.id });
       });
     }
 
-    // อัปเดตกล้อง Chase Cam ตามตัวยาน Long March 5
     spaceEnv.updateFlightCamera(camera, dt);
 
-    // ส่งสถานะการบิน Sync ไปยังผู้เล่น Ground Crew
     if (S.playing && (nowReal - S.lastNavEmit > 50)) {
       S.lastNavEmit = nowReal;
       sock.emit('ship_nav', spaceEnv.getNavState());
     }
   } else {
-    // ผู้เล่น Ground Crew อยู่ที่หอดูดาวภาคพื้นดิน
     look.update(dt);
     camera.position.set(
       Math.sin(look.yaw) * CFG.camera.eye.z, CFG.camera.eye.y,
