@@ -529,15 +529,18 @@ sock.on('destroyed', d => {
   if (d.shipHp !== undefined) { S.shipHp = d.shipHp; paintShipHp(); }
   if (d.stormTotal !== undefined) { S.stormHits = d.stormHits; S.stormTotal = d.stormTotal; }
   const m = field.byId(d.meteorId);
+  const rgb = hexToRgb(d.hex);
   if (m) {
-    const rgb = hexToRgb(d.hex);
-    juice.explode(m.position, clamp(m.size / CFG.meteor.sizeMin, 0.8, 2.0), true, rgb);
-    if (S.phase !== 'storm' && m.gmn) floatText.add(m.position, m.gmn.duration);
+    juice.explode(m.position, clamp((m.size || 4) / CFG.meteor.sizeMin, 1.2, 3.2), true, rgb);
+    if (S.phase !== 'storm' && m.gmn) floatText.add(m.position, m.gmn.duration || '+100');
     contactLog.add(m, 'hit');
     field.kill(m);
-    sfx.hit(S.combo);
-    juice.shake(CFG.juice.shakeHit);
+  } else {
+    camera.getWorldDirection(_vCamDir);
+    juice.explode(camera.position.clone().add(_vCamDir.clone().multiplyScalar(120)), 1.8, true, rgb);
   }
+  sfx.hit(S.combo);
+  juice.shake(CFG.juice.shakeHit || 0.8);
 });
 
 // ══ จบรอบ: แสดงฉากจบ 3 แบบ & E-Certificate ══════════════════
@@ -893,13 +896,13 @@ class Tracers {
 }
 const tracers = new Tracers(scene);
 
-// ══ เล็ง + ยิง (Crosshair Center Ray + Aim Assist) ════════════
+// ══ เล็ง + ยิง (Crosshair Center Ray + Screen NDC Proximity) ════
 const _vCamDir = new THREE.Vector3();
 const _toMeteor = new THREE.Vector3();
+const _vProjAim = new THREE.Vector3();
 const _a = {};
 
 function pickTarget() {
-  const cone = (CFG.assist.lockOnDeg || 12.0) * DEG;
   let best = null, bestScore = Infinity;
   const camPos = camera.position;
   camera.getWorldDirection(_vCamDir);
@@ -907,25 +910,25 @@ function pickTarget() {
   for (const m of field.active) {
     if (!m.alive || S.destroyed.has(m.id)) continue;
 
-    // เวกเตอร์จากตำแหน่งกล้องไปยังอุกกาบาต
+    // 1. Ray angle in 3D
     _toMeteor.subVectors(m.position, camPos);
     const dist = _toMeteor.length();
     if (dist < 0.5) continue;
     _toMeteor.divideScalar(dist);
 
-    // มุมระหว่างทิศทางการมองของกล้อง (Crosshair) กับทิศทางไปยังอุกกาบาต
     const dot = clamp(_vCamDir.dot(_toMeteor), -1, 1);
-    const ang = Math.acos(dot);
+    const angDeg = Math.acos(dot) * (180 / Math.PI);
 
-    // รัศมีเชิงมุมของอุกกาบาต + กรวย Aim Assist
-    const meteorRad = m.radius || 3.5;
-    const angularRadius = Math.atan((meteorRad * 2.5) / dist);
-    const limit = Math.max(cone, angularRadius);
+    // 2. Projected Screen distance from crosshair center (0,0)
+    _vProjAim.copy(m.position).project(camera);
+    const isFront = _vProjAim.z < 1.0;
+    const screenDist = isFront ? Math.hypot(_vProjAim.x, _vProjAim.y) : 999;
 
-    if (ang <= limit) {
-      const sc = ang / limit;
-      if (sc < bestScore) {
-        bestScore = sc;
+    // Hit condition: within 22 degrees in 3D OR within 0.35 in screen space
+    if (isFront && (angDeg <= 22.0 || screenDist <= 0.35)) {
+      const score = Math.min(angDeg / 22.0, screenDist / 0.35);
+      if (score < bestScore) {
+        bestScore = score;
         best = m;
       }
     }
@@ -964,6 +967,7 @@ function fire() {
     const shot = tracers.spawn(spawnPos, _end, CFG.bullet.travelMs, target.id, S.hex);
     if (shot) shot.fireT = t;
     sock.emit('player_fire', { targetId: target.id, from: spawnPos.toArray(), to: _end.toArray(), yaw: look.yaw, pitch: look.pitch });
+    sock.emit('kill', { meteorId: target.id });
   } else {
     camera.getWorldDirection(_aim);
     _end.copy(spawnPos).addScaledVector(_aim, CFG.bullet.missSpeed * CFG.bullet.missMs * .001);

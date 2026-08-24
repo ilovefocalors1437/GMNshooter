@@ -511,7 +511,7 @@ class Room:
         ยิงซ้ำดวงที่แตกไปแล้ว = เงียบๆ ไม่ได้แต้ม ไม่ error
         """
         with self.lock:
-            if self.state != "playing":
+            if self.state not in ("playing", "qte"):
                 return None
             p = self.player_of_sid(sid)
             if p is None or meteor_id in self.destroyed:
@@ -519,7 +519,15 @@ class Room:
 
             wire = next((w for w in self.schedule if w["id"] == meteor_id), None)
             if wire is None:
-                return None
+                if self.qte_wire and self.qte_wire.get("id") == meteor_id:
+                    wire = self.qte_wire
+                else:
+                    return None
+
+            if wire.get("qte"):
+                self.qte_hits += 1
+                return {"kind": "qte_progress", "hits": self.qte_hits, "need": self.qte_need,
+                        "slot": p.slot, "hex": p.hex}
 
             need = max(1, int(wire.get("hp", 1)))
             done = self.damage.get(meteor_id, 0) + 1
