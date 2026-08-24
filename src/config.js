@@ -306,10 +306,21 @@ export const CFG = {
     resyncSec: 25,        // ปิงซ้ำเป็นระยะ กัน clock drift ตอนเล่นยาว
   },
 
+  // ═══ Thailand CE-7 Moonshot Spacecraft ════════════════════
+  ship: {
+    maxHp: 200,
+    startHp: 200,
+  },
+
   // ═══ Path ═════════════════════════════════════════════════
   assets: {
-    turret: './3D%20asset/turret/turret.glb',
-    meteor: './3D%20asset/Meteor/ps1_style_low_poly_asteroids.glb',
+    turret: '/3D%20asset/space/player_laser_turret.glb',
+    turretFallback: '/3D%20asset/turret/turret.glb',
+    meteor: '/3D%20asset/Meteor/ps1_style_low_poly_asteroids.glb',
+    moon: '/3D%20asset/space/moon_sphere.glb',
+    rocket: '/3D%20asset/space/long_march_5_rocket.glb',
+    probe: '/3D%20asset/space/ce7_lunar_probe.glb',
+    dish: '/3D%20asset/space/ground_tracking_dish.glb',
   },
 };
 

@@ -61,6 +61,13 @@ QTE_MAG_MAX = -3.0           # คัดเฉพาะดวงที่สว�
 QTE_YAW_LIMIT_DEG = 48       # ดวงสุดท้ายต้องอยู่กลางซุ้ม ทุกคนจะได้เห็นพร้อมกัน
 QTE_SIZE_MULT = 2.2          # โตกว่าปกติ — ดวงเดียวที่ทั้งทีมรุมยิง ต้องเห็นชัด
 
+# ═══ Thailand CE-7 Moonshot & Spacecraft Shield ════════════
+SHIP_MAX_HP = 200            # พลังเกราะยาน Long March 5 / Chang'e-7 (200 HP)
+SHIP_REPAIR_ON_COMBO = 2     # ฟื้นฟูเกราะเล็กน้อยเมื่อทำคอมโบสำเร็จ
+SHIP_MIN_DAMAGE = 4          # ดาเมจต่ำสุดของอุกกาบาตช้า
+SHIP_MAX_DAMAGE = 20         # ดาเมจสูงสุดของอุกกาบาตความเร็วสูง (70+ km/s)
+SHIP_DMG_SPEED_DIV = 3.6     # Damage = min(20, max(4, round(v_init / 3.6)))
+
 COUNTDOWN_SEC = 3
 # จบรอบแล้วกี่วินาทีถึงกลับ lobby เอง — บูธจะได้ต่อคิวรอบถัดไปโดยไม่ต้องกดอะไร
 RESET_AFTER_SEC = 25

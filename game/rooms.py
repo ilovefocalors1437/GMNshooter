@@ -110,6 +110,9 @@ class Room:
         self.seed = 0
         self.schedule = []               # ตารางอุกกาบาตทั้งรอบ
         self.destroyed = {}              # meteorId -> slot ที่ยิงได้ (dedupe)
+        self.missed = set()                 # meteorId -> ที่หลุดไปชนยาน
+        self.ship_hp = C.SHIP_MAX_HP        # พลังเกราะยาน Long March 5 (200 HP)
+        self.ship_max_hp = C.SHIP_MAX_HP
         self.start_ms = 0.0
         self.end_ms = 0.0
 
@@ -229,6 +232,8 @@ class Room:
             self.round_id += 1
             self.seed = secrets.randbelow(2 ** 31)
             self.destroyed = {}
+            self.missed = set()
+            self.ship_hp = C.SHIP_MAX_HP
             self.kills = 0
             self.last_board = None
             self.storm_total = 0
@@ -483,6 +488,11 @@ class Room:
             p.score += gained
             p.kills += 1
             self.kills += 1
+
+            # ยิงสกัดกั้นสำเร็จ -> ช่วยฟื้นฟูเกราะยานเล็กน้อย (Telemetry Buff)
+            if self.ship_hp < self.ship_max_hp:
+                self.ship_hp = min(self.ship_max_hp, self.ship_hp + C.SHIP_REPAIR_ON_COMBO)
+
             # ศึกเดือดยังนับรวมทั้งห้องเหมือนเดิม — event พิเศษต้องช่วยกัน
             if wire.get("storm"):
                 self.storm_hits += 1
@@ -491,7 +501,55 @@ class Room:
                     "name": p.display,
                     "gained": gained, "score": p.score, "combo": p.combo,
                     "kills": p.kills, "roomKills": self.kills,
+                    "shipHp": self.ship_hp, "shipMaxHp": self.ship_max_hp,
                     "stormHits": self.storm_hits, "stormTotal": self.storm_total}
+
+    def record_miss(self, meteor_id):
+        """
+        อุกกาบาตที่ยิงสกัดไม่ทันและหลุดเข้าสู่แนวเส้นทางของยาน Long March 5
+        ดาเมจคิดตามความเร็วจริง (vgeo จาก GMN): ยิ่งเร็ว พลังงานจลน์ยิ่งสูง (max 20)
+        """
+        with self.lock:
+            if self.state not in ("playing", "qte"):
+                return None
+            if meteor_id in self.destroyed or meteor_id in self.missed:
+                return None
+
+            wire = next((w for w in self.schedule if w["id"] == meteor_id), None)
+            if wire is None:
+                return None
+
+            self.missed.add(meteor_id)
+            v = 25.0
+            if wire.get("gmn") and wire["gmn"].get("vgeo") is not None:
+                v = float(wire["gmn"]["vgeo"])
+
+            dmg = int(round(v / C.SHIP_DMG_SPEED_DIV))
+            dmg = max(C.SHIP_MIN_DAMAGE, min(C.SHIP_MAX_DAMAGE, dmg))
+            self.ship_hp = max(0, self.ship_hp - dmg)
+
+            return {
+                "kind": "ship_damage",
+                "meteorId": meteor_id,
+                "dmg": dmg,
+                "speed": round(v, 1),
+                "shipHp": self.ship_hp,
+                "shipMaxHp": self.ship_max_hp,
+                "emergency": self.ship_hp <= 0,
+                "shower": (wire.get("gmn") or {}).get("shower", "Meteor"),
+            }
+
+    def calc_rank(self):
+        """ระดับความสำเร็จของภารกิจ Thailand CE-7 Moonshot (S, A, B, C)"""
+        qte_passed, _, _ = self.qte_result()
+        if self.ship_hp >= 150 and qte_passed:
+            return "S"
+        elif self.ship_hp >= 80:
+            return "A"
+        elif self.ship_hp > 0:
+            return "B"
+        else:
+            return "C"
 
     def ended_for(self, seconds):
         with self.lock:
@@ -509,6 +567,8 @@ class Room:
             self.state = "lobby"
             self.schedule = []
             self.destroyed = {}
+            self.missed = set()
+            self.ship_hp = C.SHIP_MAX_HP
             self.damage = {}
             self.ended_ms = 0.0
             self.kills = 0
@@ -528,8 +588,6 @@ class Room:
             self.by_token = {t: p for t, p in self.by_token.items() if p in keep}
             for p in keep:
                 p.reset_round()
-                # ชื่อยังอยู่ — คนเดิมที่ยังไม่ออกจากจอ ไม่ต้องพิมพ์ใหม่ทุกรอบ
-                # คนที่ออกไปแล้วถูกตัดทิ้งไปพร้อมชื่อตั้งแต่บรรทัดบน
 
     def storm_result(self):
         """คืน (ผ่านไหม, ตัวคูณ, อัตราส่วน)"""
@@ -571,6 +629,9 @@ class Room:
                 "qteLeftMs": round(self.qte_left_ms()),
                 "qteHits": self.qte_hits, "qteNeed": self.qte_need,
                 "playerCount": len(self.active()),
+                "shipHp": self.ship_hp,
+                "shipMaxHp": self.ship_max_hp,
+                "missionRank": self.calc_rank(),
             }
 
 

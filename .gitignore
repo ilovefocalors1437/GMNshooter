@@ -10,6 +10,7 @@ env/
 # ตัวเต็ม 60 MB สร้างเองตอนบูตครั้งแรก (game/db.py::_ensure_db)
 data/meteors.db
 data/meteors.db.part
+data/*.xz
 
 # ── ไฟล์ดิบของ GMN ──────────────────────────────────────────
 # traj_summary ใหญ่ระดับ 100 MB - 3 GB ห้ามเข้า git

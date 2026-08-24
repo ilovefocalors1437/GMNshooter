@@ -49,13 +49,14 @@ class TurretRig {
 
   // สีประจำผู้เล่น — ทาเฉพาะวัสดุ Accent ตัวถังยังเป็น silhouette ดำ
   setColor(hex) {
+    const col = new THREE.Color(hex);
     this.root.traverse(o => {
       if (o.isMesh) {
         const mats = Array.isArray(o.material) ? o.material : [o.material];
         for (const m of mats) {
-          if (m.name === 'Accent') {
-            m.color.set(hex);
-            if (m.emissive) m.emissive.set(hex).multiplyScalar(0.6);
+          if (m.name.includes('Accent') || m.name.includes('Emissive') || m.name.includes('glow') || m.name.includes('Laser') || m.name.includes('Light') || m.name.includes('Trim')) {
+            m.color.copy(col);
+            if (m.emissive) m.emissive.copy(col).multiplyScalar(0.8);
           }
         }
       }
@@ -102,21 +103,57 @@ class TurretRig {
 }
 
 // ────────────────────────────────────────────────
-// A) โหลดจาก turret.glb
+// A) โหลดจาก GLB (รองรับทั้ง player_laser_turret.glb และ turret.glb)
 // ────────────────────────────────────────────────
-export async function createTurret(url = './turret.glb', color = 0x59c0ff) {
-  const gltf = await new GLTFLoader().loadAsync(url);
+export async function createTurret(url = CFG.assets?.turret || './3D%20asset/space/player_laser_turret.glb', color = 0x59c0ff) {
+  let gltf;
+  const loader = new GLTFLoader();
+  try {
+    gltf = await loader.loadAsync(url);
+  } catch (e) {
+    console.warn(`[turret] โหลด ${url} ไม่สำเร็จ:`, e.message, 'สลับไปตัวสำรอง');
+    if (CFG.assets?.turretFallback && url !== CFG.assets.turretFallback) {
+      gltf = await loader.loadAsync(CFG.assets.turretFallback);
+    } else {
+      return buildTurretProcedural(color);
+    }
+  }
   const root = gltf.scene;
 
-  const parts = {
-    head:   root.getObjectByName('Head'),
-    barrel: root.getObjectByName('Barrel'),
-    muzzle: root.getObjectByName('Muzzle'),
-  };
-  for (const [k, v] of Object.entries(parts)) {
-    if (!v) throw new Error(`turret.glb: ไม่เจอ node "${k}" — โมเดลถูก merge มาหรือเปล่า?`);
+  // Clone materials เพื่อไม่ให้สีป้อมของผู้เล่นแต่ละคนชนกัน
+  root.traverse(o => {
+    if (o.isMesh && o.material) {
+      o.material = Array.isArray(o.material)
+        ? o.material.map(m => m.clone())
+        : o.material.clone();
+      o.castShadow = false;
+      o.receiveShadow = false;
+    }
+  });
+
+  let head = root.getObjectByName('Head');
+  let barrel = root.getObjectByName('Barrel');
+  let muzzle = root.getObjectByName('Muzzle');
+
+  if (!head || !barrel || !muzzle) {
+    // ปรับโครงสร้างแบบ dynamic wrapper สำหรับโมเดลที่ยังไม่ได้แยก parent
+    const wrapper = new THREE.Group();
+    wrapper.name = 'TurretRigWrapper';
+    
+    head = new THREE.Group(); head.name = 'Head';
+    barrel = new THREE.Group(); barrel.name = 'Barrel';
+    muzzle = new THREE.Object3D(); muzzle.name = 'Muzzle';
+    muzzle.position.set(0, 0.5, 1.6);
+
+    barrel.add(root);
+    barrel.add(muzzle);
+    head.add(barrel);
+    wrapper.add(head);
+
+    return new TurretRig(wrapper, { head, barrel, muzzle }, color);
   }
-  return new TurretRig(root, parts, color);
+
+  return new TurretRig(root, { head, barrel, muzzle }, color);
 }
 
 // ────────────────────────────────────────────────

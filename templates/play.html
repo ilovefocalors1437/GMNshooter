@@ -6,7 +6,7 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#04060d">
-<title>GMNshooter</title>
+<title>GMNshooter — Thailand CE-7 Moonshot</title>
 
 <script type="importmap">
 { "imports": {
@@ -18,11 +18,6 @@
 <style>
   :root {
     --accent:#59c0ff; --danger:#ff4d6d; --good:#8fffa8; --me:#59c0ff;
-
-    /* ทั้งหน้านี้ออกแบบมาสำหรับมือถือแนวตั้ง ทุกขนาดเลยผูกกับ "ความกว้างจอ"
-       บนคอมจอกว้าง 1920 นั่นแปลว่าตัวหนังสือ 11vw = 211px — ล้นจอทั้งหมด
-       --u คือ vw ที่ถูกเพดานความสูงจอกดไว้ ทำให้บนคอมได้คอลัมน์กว้างเท่ามือถือ
-       บนมือถือแนวตั้ง 1vw < 0.52vh เสมอ → ได้ค่าเดิมเป๊ะ ไม่กระทบของที่เทสมาแล้ว */
     --u: min(1vw, 0.52vh);
   }
   * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
@@ -40,14 +35,17 @@
           background:radial-gradient(ellipse at 50% 30%, #0d1730 0%, #04060d 72%); }
   .pane.on { display:flex; }
 
-  h1 { font-size:calc(11 * var(--u)); letter-spacing:.08em; }
+  h1 { font-size:calc(10 * var(--u)); letter-spacing:.08em; }
   h1 .b { color:var(--accent); }
-  .sub { font-size:calc(4.2 * var(--u)); opacity:.75; font-weight:400; line-height:1.6; }
+  .sub { font-size:calc(3.8 * var(--u)); opacity:.75; font-weight:400; line-height:1.6; }
+  .mission-tag {
+    font-size:calc(2.6 * var(--u)); letter-spacing:.2em; color:var(--accent);
+    padding:calc(.8 * var(--u)) calc(2.4 * var(--u)); border-radius:calc(2 * var(--u));
+    background:rgba(89,192,255,.14); border:1px solid rgba(89,192,255,.3); margin-bottom:1vh;
+  }
   .err { color:var(--danger); font-size:calc(4 * var(--u)); min-height:calc(5 * var(--u)); }
 
   input {
-    /* แยกเป็น longhand — calc() ใน shorthand ของ font ตรงตำแหน่ง size/line-height
-       เบราว์เซอร์บางตัวพาร์สไม่ผ่านแล้วทิ้งทั้งบรรทัด */
     font-weight:700; font-size:calc(9 * var(--u)); line-height:1.2;
     font-family:"Bahnschrift","Segoe UI",sans-serif; text-align:center;
     width:calc(74 * var(--u)); padding:calc(3 * var(--u)); border-radius:calc(3 * var(--u)); border:calc(.7 * var(--u)) solid rgba(255,255,255,.25);
@@ -56,17 +54,11 @@
   input:focus { outline:none; border-color:var(--accent); }
 
   .btn {
-    font-size:calc(6 * var(--u)); padding:calc(3.4 * var(--u)) calc(9 * var(--u)); border-radius:calc(3 * var(--u)); border:none;
-    background:var(--accent); color:#06121c; letter-spacing:.06em;
+    font-size:calc(5.4 * var(--u)); padding:calc(3 * var(--u)) calc(8 * var(--u)); border-radius:calc(3 * var(--u)); border:none;
+    background:var(--accent); color:#06121c; letter-spacing:.06em; cursor:pointer;
   }
   .btn.ghost { background:rgba(255,255,255,.10); color:#fff; }
   .btn:disabled { opacity:.4; }
-
-  .diffs { display:flex; gap:calc(2.4 * var(--u)); flex-wrap:wrap; justify-content:center; }
-  .diff { padding:calc(2.6 * var(--u)) calc(4.4 * var(--u)); border-radius:calc(2.4 * var(--u)); font-size:calc(4.4 * var(--u));
-          border:calc(.6 * var(--u)) solid rgba(255,255,255,.2); background:rgba(255,255,255,.04); }
-  .diff.on { border-color:var(--accent); background:rgba(89,192,255,.16); }
-  .diff small { display:block; font-size:calc(3 * var(--u)); opacity:.6; font-weight:400; }
 
   .roster { display:flex; gap:calc(2.4 * var(--u)); }
   .dot { width:calc(9 * var(--u)); height:calc(9 * var(--u)); border-radius:50%; opacity:.22; }
@@ -79,21 +71,57 @@
   #hud.on { display:block; }
   #topbar { position:absolute; top:0; left:0; right:0; padding:calc(2.6 * var(--u)) calc(4 * var(--u));
             display:flex; justify-content:space-between; align-items:flex-start;
-            background:linear-gradient(rgba(0,0,0,.55), transparent); }
-  /* คะแนนเล็กลง — GMN คือพระเอก ไม่ใช่ตัวเลขคะแนน */
-  #teamscore { font-size:calc(4.4 * var(--u)); line-height:1; text-shadow:0 0 calc(2 * var(--u)) rgba(89,192,255,.5); }
+            background:linear-gradient(rgba(0,0,0,.65), transparent); }
+  #teamscore { font-size:calc(4.8 * var(--u)); line-height:1; text-shadow:0 0 calc(2 * var(--u)) rgba(89,192,255,.5); }
   #teamname { font-size:calc(2.6 * var(--u)); opacity:.55; letter-spacing:.14em; font-weight:400; }
-  /* นาฬิกาโชว์เฉพาะจอ admin — บนมือถือรกและกดดันเด็กเปล่าๆ */
   #clock { display:none; }
   #combo { position:absolute; top:13vh; left:0; right:0; text-align:center;
            font-size:calc(6 * var(--u)); color:var(--good); opacity:0; transition:opacity .15s; }
   #combo.on { opacity:1; }
 
+  /* ── Spacecraft Shield & Altitude Box ── */
+  #ship-status-box {
+    position: absolute; right: calc(3 * var(--u)); top: 10vh;
+    width: calc(48 * var(--u)); max-width: 290px;
+    background: rgba(8, 14, 28, 0.85);
+    border: calc(0.3 * var(--u)) solid rgba(89, 192, 255, 0.35);
+    border-radius: calc(1.4 * var(--u));
+    padding: calc(1.6 * var(--u)) calc(2 * var(--u));
+    font-size: calc(2.8 * var(--u));
+    box-shadow: 0 0 calc(2 * var(--u)) rgba(0, 0, 0, 0.5);
+  }
+  .ship-header, .ship-footer {
+    display: flex; justify-content: space-between; align-items: baseline;
+    font-weight: 700;
+  }
+  .ship-header span:first-child { color: var(--accent); font-size: calc(2.6 * var(--u)); }
+  #ship-alt-num { color: #8fffa8; font-variant-numeric: tabular-nums; }
+  #ship-hp-track {
+    position: relative; height: calc(1.8 * var(--u)); margin: calc(0.8 * var(--u)) 0;
+    background: rgba(255, 255, 255, 0.12); border-radius: calc(0.9 * var(--u)); overflow: hidden;
+  }
+  #ship-hp-fill {
+    height: 100%; width: 100%; background: linear-gradient(90deg, #59c0ff, #8fffa8);
+    border-radius: calc(0.9 * var(--u)); transition: width 0.25s ease-out, background 0.3s;
+  }
+  #ship-hp-fill.emergency {
+    background: linear-gradient(90deg, #ff4d6d, #ffb37a);
+    animation: epulse 0.6s infinite alternate;
+  }
+  @keyframes epulse { to { filter: brightness(1.6); } }
+  .ship-footer span { opacity: 0.65; font-size: calc(2.4 * var(--u)); font-weight: 400; }
+  #ship-hp-num { font-weight: 700; color: #fff; font-variant-numeric: tabular-nums; }
 
-  /* ตัวเลขลอยตอนยิงโดน */
-  .ft b { display:block; font-size:1.5em; color:var(--good); }
-  .ft span { font-size:.72em; opacity:.9; }
+  /* Red flash on damage */
+  body.hit-flash #hud {
+    background: radial-gradient(ellipse at 50% 50%, rgba(255, 77, 109, 0.4) 0%, transparent 80%);
+  }
+  body.emergency-mode #ship-status-box {
+    border-color: var(--danger);
+    box-shadow: 0 0 calc(3 * var(--u)) var(--danger);
+  }
 
+  /* ── Crosshair ── */
   #cross { position:absolute; left:50%; top:50%; width:calc(14 * var(--u)); height:calc(14 * var(--u));
            transform:translate(-50%,-50%); }
   #cross .ring { position:absolute; inset:0; border:calc(.7 * var(--u)) solid rgba(255,255,255,.3);
@@ -102,26 +130,24 @@
   #cross .d { position:absolute; left:50%; top:50%; width:calc(1 * var(--u)); height:calc(1 * var(--u));
               margin:calc(-.5 * var(--u)) 0 0 calc(-.5 * var(--u)); background:#fff; border-radius:50%; }
 
-  /* ขนาดนิ้วโป้งพอดี ไม่ใช่ครึ่งจอ — ใหญ่ไปก็บังฉากซึ่งเป็นของที่ต้องโชว์ */
-  /* ── การ์ด GMN ── */
-  #cards { position:absolute; left:calc(3 * var(--u)); top:11vh; width:calc(52 * var(--u)); max-width:340px; }
-  .cd { background:rgba(8,14,28,.78); border-left:calc(1 * var(--u)) solid var(--accent);
-        border-radius:calc(1.4 * var(--u)); padding:calc(2 * var(--u)) calc(2.4 * var(--u)); margin-bottom:calc(1.6 * var(--u));
-        font-size:calc(3.1 * var(--u)); line-height:1.45; font-weight:400; }
+  /* ── Contact Cards ── */
+  #cards { position:absolute; left:calc(3 * var(--u)); top:10vh; width:calc(50 * var(--u)); max-width:320px; }
+  .cd { background:rgba(8,14,28,.82); border-left:calc(1 * var(--u)) solid var(--accent);
+        border-radius:calc(1.4 * var(--u)); padding:calc(1.8 * var(--u)) calc(2.2 * var(--u)); margin-bottom:calc(1.4 * var(--u));
+        font-size:calc(3 * var(--u)); line-height:1.45; font-weight:400; }
   .cd.miss { border-left-color:var(--danger); opacity:.75; }
   .cd.fresh { animation:cdin 300ms ease-out; }
   @keyframes cdin { from { opacity:0; transform:translateX(calc(-4 * var(--u))); } }
-  .cd-grp { font-weight:700; color:#cfe6ff; font-size:calc(3.6 * var(--u)); margin-bottom:calc(.6 * var(--u)); }
+  .cd-grp { font-weight:700; color:#cfe6ff; font-size:calc(3.5 * var(--u)); margin-bottom:calc(.4 * var(--u)); }
   .cd-row { display:flex; justify-content:space-between; gap:calc(2 * var(--u)); }
   .cd-row span { opacity:.6; }
   .cd-row b { text-align:right; font-weight:700; }
-  .cd-row b i { font-style:normal; opacity:.75; font-size:calc(2.7 * var(--u)); }
-  .cd-cam { margin-top:calc(.8 * var(--u)); color:var(--good); font-weight:700; }
-  .cd-miss { margin-top:calc(.6 * var(--u)); color:var(--danger); font-weight:700; }
+  .cd-row b i { font-style:normal; opacity:.75; font-size:calc(2.6 * var(--u)); }
+  .cd-cam { margin-top:calc(.6 * var(--u)); color:var(--good); font-weight:700; font-size:calc(2.6 * var(--u)); }
 
   /* ── พายุ ── */
   body.storm #hud { box-shadow:inset 0 0 calc(14 * var(--u)) rgba(255,77,109,.45); }
-  #stormbar { display:none; position:absolute; left:50%; top:9vh;
+  #stormbar { display:none; position:absolute; left:50%; top:8vh;
               transform:translateX(-50%); width:calc(70 * var(--u)); text-align:center; }
   #stormlabel { font-size:calc(3.2 * var(--u)); letter-spacing:.22em; color:var(--danger); opacity:.9; }
   #stormcount { font-size:calc(11 * var(--u)); line-height:1; color:#fff;
@@ -143,7 +169,7 @@
 
   /* ── QTE ลูกไฟดวงสุดท้าย ── */
   body.qte #hud { box-shadow:inset 0 0 calc(16 * var(--u)) rgba(255,179,122,.5); }
-  #qtebar { display:none; position:absolute; left:50%; top:8vh;
+  #qtebar { display:none; position:absolute; left:50%; top:7vh;
             transform:translateX(-50%); width:calc(74 * var(--u)); text-align:center; }
   #qtelabel { font-size:calc(3.2 * var(--u)); letter-spacing:.22em; color:#ffb37a; opacity:.9; }
   #qtecount { font-size:calc(12 * var(--u)); line-height:1.05; color:#fff;
@@ -163,80 +189,96 @@
   #qtebanner.on { opacity:1; animation:sb .5s ease-out; }
   body.qte #fire { animation:firepulse .5s ease-in-out infinite alternate; }
   @keyframes firepulse { to { transform:scale(1.12); } }
-  #sum .sc.qte b { font-size:calc(4.4 * var(--u)); }
-  #sum .sc.qte.ok b { color:var(--good); }
-  #sum .sc.qte.bad b { color:#ffb37a; }
 
-  /* บนคอมต้องล็อกเมาส์ก่อนถึงจะเล็งได้ลื่น — ไม่บอกไว้ไม่มีทางเดาออก */
   #mousehint { display:none; position:absolute; left:50%; bottom:14vh;
                transform:translateX(-50%); white-space:nowrap;
                font-size:calc(2.6 * var(--u)); font-weight:400; opacity:.6;
                background:rgba(4,6,13,.7); padding:calc(1.4 * var(--u)) calc(3 * var(--u));
                border-radius:calc(2 * var(--u)); }
   body.desktop.unlocked #mousehint { display:block; }
-  /* ปุ่มยิงไม่ซ่อนบนคอม — เผื่อเบราว์เซอร์บล็อก pointer lock จะได้ไม่เหลือทางยิงเลย */
-  /* บนคอมคลิกที่ไหนก็ยิง (ดู mobile-main.js) ปุ่มเลยไม่มีหน้าที่อะไร
-     เดิมแค่หรี่เหลือ .55 ซึ่งยังกินพื้นที่และหลอกให้คิดว่าต้องกดมัน */
   body.desktop #fire { display:none; }
 
   #fire { position:absolute; right:calc(6 * var(--u)); bottom:6vh; width:calc(15 * var(--u)); height:calc(15 * var(--u));
           max-width:88px; max-height:88px;
           border-radius:50%; background:var(--me); color:#06121c;
           display:flex; align-items:center; justify-content:center;
-          font-size:calc(3.4 * var(--u)); pointer-events:auto; box-shadow:0 .7vh 0 rgba(0,0,0,.45); }
+          font-size:calc(3.4 * var(--u)); pointer-events:auto; box-shadow:0 .7vh 0 rgba(0,0,0,.45); cursor:pointer; }
   #fire.down { transform:translateY(.7vh); box-shadow:none; }
 
-  /* ══ สรุปผล (ฝั่งผู้เล่น) ══ */
-  /* selector เดิมเขียนว่า #sum แต่ id จริงคือ p-sum — สไตล์ทั้งบล็อกเลยไม่เคยติด */
-  #p-sum { justify-content:flex-start; padding:5vh calc(6 * var(--u)) 9vh; gap:0; overflow-y:auto; }
+  /* ══ สรุปผล & E-Certificate ══ */
+  #p-sum { justify-content:flex-start; padding:4vh calc(5 * var(--u)) 8vh; gap:0; overflow-y:auto; }
   #p-sum .s-team { font-size:calc(3.4 * var(--u)); opacity:.55; font-weight:400; letter-spacing:.1em; }
   #p-sum .s-team b { font-weight:700; opacity:1; letter-spacing:.04em; }
-  #p-sum .s-score { font-size:calc(22 * var(--u)); line-height:1; color:var(--accent);
+  #p-sum .s-score { font-size:calc(18 * var(--u)); line-height:1; color:var(--accent);
                     font-variant-numeric:tabular-nums;
                     text-shadow:0 0 calc(8 * var(--u)) rgba(89,192,255,.35); }
-  #p-sum .s-kills { font-size:calc(4 * var(--u)); font-weight:400; opacity:.7; margin-top:.6vh; }
+  #p-sum .s-kills { width:100%; font-weight:400; opacity:.9; margin-top:.4vh; }
   #p-sum .s-kills b { color:#fff; font-weight:700; }
 
+  /* ── E-Certificate Badge ── */
+  .cert-badge {
+    margin: 1.8vh auto 1vh;
+    padding: calc(2.4 * var(--u)) calc(3.6 * var(--u));
+    border: calc(0.5 * var(--u)) solid var(--accent);
+    border-radius: calc(2.2 * var(--u));
+    background: rgba(89, 192, 255, 0.08);
+    box-shadow: 0 0 calc(4 * var(--u)) rgba(89, 192, 255, 0.2);
+    width: 100%; max-width: 480px;
+  }
+  .cert-rank {
+    font-size: calc(13 * var(--u));
+    line-height: 1;
+    font-weight: 900;
+    display: block;
+    text-shadow: 0 0 calc(3 * var(--u)) currentColor;
+  }
+  .cert-title {
+    font-size: calc(4 * var(--u));
+    letter-spacing: 0.06em;
+    font-weight: 700;
+    margin-top: calc(0.6 * var(--u));
+  }
+  .cert-sub {
+    font-size: calc(2.4 * var(--u));
+    letter-spacing: 0.18em;
+    opacity: 0.65;
+    font-weight: 400;
+    margin-top: calc(0.4 * var(--u));
+  }
+
   #p-sum h2 { font-size:calc(2.7 * var(--u)); font-weight:700; letter-spacing:.26em; opacity:.42;
-              margin:4.2vh 0 1.6vh; }
+              margin:3.6vh 0 1.4vh; }
 
   #p-sum .s-list { width:100%; max-width:520px; }
   .s-row { display:flex; align-items:baseline; gap:calc(2.4 * var(--u)); padding:calc(1.5 * var(--u)) 0;
            border-bottom:1px solid rgba(255,255,255,.08); text-align:left; }
   .s-row .nm { flex:1; font-size:calc(3.8 * var(--u)); color:#cfe6ff; }
-  .s-row .cam { font-size:calc(3 * var(--u)); opacity:.55; font-weight:400; }
+  .s-row .cam { font-size:calc(2.8 * var(--u)); opacity:.55; font-weight:400; }
   .s-row .n { font-size:calc(4.4 * var(--u)); font-variant-numeric:tabular-nums; color:var(--good); }
   .s-row .n i { font-style:normal; font-size:calc(2.6 * var(--u)); opacity:.5; font-weight:400;
                 margin-left:calc(.6 * var(--u)); color:#fff; }
   .s-empty { font-size:calc(3.4 * var(--u)); font-weight:400; opacity:.4; padding:calc(2 * var(--u)) 0; }
 
-  #p-sum .s-gmn { width:100%; max-width:520px; font-size:calc(3.3 * var(--u)); font-weight:400;
-                  line-height:1.75; opacity:.8; text-align:left; }
+  #p-sum .s-gmn { width:100%; max-width:520px; font-size:calc(3.1 * var(--u)); font-weight:400;
+                  line-height:1.75; opacity:.85; text-align:left; }
   #p-sum .s-gmn b { color:#cfe6ff; }
   #p-sum .s-nums { width:100%; max-width:520px; margin-top:2vh; }
   #p-sum .s-nums .sc { display:flex; justify-content:space-between; align-items:baseline;
-                       padding:calc(1 * var(--u)) 0; font-size:calc(3.3 * var(--u)); font-weight:400; opacity:.85; }
-  #p-sum .s-nums .sc b { font-weight:700; font-size:calc(5 * var(--u)); color:var(--accent);
+                       padding:calc(1 * var(--u)) 0; font-size:calc(3.2 * var(--u)); font-weight:400; opacity:.85; }
+  #p-sum .s-nums .sc b { font-weight:700; font-size:calc(4.6 * var(--u)); color:var(--accent);
                          font-variant-numeric:tabular-nums; }
-  #p-sum .btn { margin-top:4vh; }
-  /* หน้าสรุปยาวและเลื่อนได้ — บรรทัดเครดิตที่ตรึงไว้ล่างจอจะทับแถวสุดท้ายพอดี
-  #p-sum.on ~ .credit { display:none; }
-
-  .credit { position:fixed; bottom:1.4vh; left:0; right:0; text-align:center;
-            font-size:calc(2.6 * var(--u)); opacity:.4; font-weight:400; z-index:11; pointer-events:none; }
-  #err { position:fixed; left:0; right:0; bottom:0; z-index:40; background:#b0121a;
-         padding:calc(2 * var(--u)); font-size:calc(3 * var(--u)); font-family:ui-monospace,monospace;
-         white-space:pre-wrap; display:none; max-height:22vh; overflow:auto; }
+  #p-sum .btn { margin-top:3.6vh; }
 </style>
 </head>
 <body>
 
 <div id="scene"></div>
 
-<!-- 0. หน้าแรก — ทุกคนเจอหน้านี้ก่อน แยก 2 ทางตรงนี้ -->
+<!-- 0. หน้าแรก -->
 <div id="p-home" class="pane on">
+  <div class="mission-tag">THAILAND CE-7 MOONSHOT × GMN</div>
   <h1>GMN<span class="b">shooter</span></h1>
-  <div class="sub">ยิงอุกกาบาตจริงจาก Global Meteor Network</div>
+  <div class="sub">คุ้มกันจรวด Long March 5 & อุปกรณ์ไทย CE-7 MATCH<br>ยิงสกัดสะเก็ดดาวจริงจาก Global Meteor Network</div>
   <button class="btn" id="go-player" style="width:calc(74 * var(--u))">เข้าร่วมเป็นผู้เล่น</button>
   <button class="btn ghost" id="go-admin" style="width:calc(74 * var(--u));font-size:calc(4.4 * var(--u))">เข้าสู่ระบบผู้ดูแล</button>
 </div>
@@ -263,9 +305,9 @@
   <button class="btn ghost" id="apw-back" style="font-size:calc(4 * var(--u));padding:calc(2 * var(--u)) calc(6 * var(--u))">ย้อนกลับ</button>
 </div>
 
-<!-- 2. ตั้งชื่อของตัวเอง — ทุกคนพิมพ์ ไม่ใช่แค่คนแรก (บอร์ดเป็นรายบุคคล) -->
+<!-- 2. ตั้งชื่อของผู้เล่น -->
 <div id="p-name" class="pane">
-  <div class="sub">ชื่อนี้จะขึ้นกระดานคะแนน</div>
+  <div class="sub">ชื่อนี้จะขึ้นกระดานคะแนนและเกียรติบัตร</div>
   <h1 style="font-size:calc(7 * var(--u))">ใส่ชื่อของคุณ</h1>
   <input id="name" maxlength="12" placeholder="ชื่อของคุณ" autocomplete="off">
   <div class="err" id="name-err"></div>
@@ -274,10 +316,10 @@
 
 <!-- 3. ห้องรอ -->
 <div id="p-lobby" class="pane">
-  <div class="sub">คุณคือ</div>
-  <h1 id="lobby-name" style="font-size:calc(9 * var(--u))">—</h1>
+  <div class="sub">คุณคือ Ground Guardian ประจำสถานี</div>
+  <h1 id="lobby-name" style="font-size:calc(8.5 * var(--u))">—</h1>
   <div class="roster" id="roster"></div>
-  <div class="sub" id="lobby-hint">รอ admin กดเริ่ม · เพื่อนยังเข้าได้อีก</div>
+  <div class="sub" id="lobby-hint">รอผู้ดูแลสั่งปล่อยจรวด · เพื่อนร่วมทีมยังเข้าได้อีก</div>
   <div class="sub" id="lobby-count" style="font-size:calc(5 * var(--u));color:var(--accent)">1 คน</div>
   <div class="sub" style="font-size:calc(3.4 * var(--u))">รหัสห้อง <b id="lobby-code">—</b></div>
 </div>
@@ -294,11 +336,27 @@
     </div>
     <div id="clock">3:00</div>
   </div>
+
+  <!-- Spacecraft Shield HP & Altitude Indicator -->
+  <div id="ship-status-box">
+    <div class="ship-header">
+      <span>🚀 LONG MARCH 5 / CE-7</span>
+      <span id="ship-alt-num">24 km</span>
+    </div>
+    <div id="ship-hp-track">
+      <div id="ship-hp-fill"></div>
+    </div>
+    <div class="ship-footer">
+      <span>เกราะพลังงาน (SHIELD)</span>
+      <span id="ship-hp-num">200 / 200 HP</span>
+    </div>
+  </div>
+
   <div id="combo">COMBO ×1</div>
   <div id="cards"><div id="cardlist"></div></div>
 
   <div id="stormbar">
-    <div id="stormlabel">ศึกเดือด</div>
+    <div id="stormlabel">ศึกเดือด · ฝ่าไอโอโนสเฟียร์</div>
     <div id="stormcount">0 / 0</div>
     <div id="stormneed"></div>
     <div id="stormtrack"><div id="stormfill"></div><div id="stormline"></div></div>
@@ -306,11 +364,11 @@
   <div id="stormbanner">ศึกเดือด!</div>
 
   <div id="qtebar">
-    <div id="qtelabel">ลูกไฟดวงสุดท้าย</div>
+    <div id="qtelabel">MEGA FIREBALL · TRANS-LUNAR INJECTION</div>
     <div id="qtecount">0 / 0</div>
     <div id="qtetrack"><div id="qtefill"></div></div>
     <div id="qtetime">0.0</div>
-    <div id="qtehint">รัวปุ่มยิงให้เร็วที่สุด!</div>
+    <div id="qtehint">รัวปุ่มยิงช่วยยานพุ่งสู่วงโคจรดวงจันทร์!</div>
   </div>
   <div id="qtebanner">รัวเลย!</div>
 
@@ -319,27 +377,25 @@
   <div id="fire">ยิง</div>
 </div>
 
-<!-- 6. สรุปผล — คะแนนใหญ่สุด · ยิงอะไรไปบ้าง · GMN คืออะไร -->
+<!-- 6. สรุปผล & E-Certificate -->
 <div id="p-sum" class="pane">
   <div class="s-team"><b id="sum-team">—</b></div>
   <div class="s-score" id="sum-score">0</div>
   <div class="s-kills" id="sum-kills"></div>
 
-  <h2>คะแนนในสนามนี้</h2>
+  <h2>คะแนนของสมาชิกในทีม</h2>
   <div class="s-list" id="sum-board"></div>
 
-  <h2>คุณยิงอะไรไปบ้าง</h2>
+  <h2>สะเก็ดดาวที่คุณสแกน & สกัดกั้น</h2>
   <div class="s-list" id="sum-list"></div>
 
-  <h2>GMN คืออะไร</h2>
+  <h2>THAILAND CE-7 MOONSHOT & GMN</h2>
   <div class="s-gmn">
-    ทุกดวงที่คุณเพิ่งยิงคือ<b>อุกกาบาตจริง</b> ที่เคยไหม้อยู่บนฟ้าโลกจริง ๆ
-    ไม่ใช่ของที่เกมแต่งขึ้นมา<br><br>
-    <b>Global Meteor Network</b> คือกล้องราคาถูกกับ Raspberry Pi ที่คนธรรมดา
-    เอาไปตั้งบนหลังคาบ้านตัวเอง กล้องสองตัวขึ้นไปเห็นดวงเดียวกันเมื่อไร
-    ก็คำนวณย้อนได้ว่ามันมาจากทิศไหนของอวกาศ เร็วเท่าไร และไหม้หมดที่ความสูงกี่กิโลเมตร<br><br>
-    เกมนี้เอาทิศจริงของแต่ละดวงมาวางบนฟ้ากรุงเทพ ณ เวลาที่คุณเล่น
-    <b>และไม่มีดวงไหนตกถึงพื้น</b> — ทั้งฐานข้อมูล ดวงที่ลงต่ำที่สุดก็ยังไหม้หมดที่ 32 กม.
+    <b>ภารกิจร่วมทางประวัติศาสตร์:</b> ในขณะที่อุปกรณ์สัญชาติไทย <b>CE-7 MATCH</b> 
+    (โดย NARIT และ มหาวิทยาลัยมหิดล) กำลังปฏิบัติการตรวจวัดรังสีคอสมิกและอนุภาคพลังงานสูงรอบดวงจันทร์...<br><br>
+    ผู้เล่นทุกคนคือ <b>เครือข่ายสถานีภาคพื้นดิน (GMN Ground Observers)</b> 
+    ที่ช่วยตรวจจับและสแกนสะเก็ดดาวจริงที่พุ่งเข้าสู่ชั้นบรรยากาศโลก (ไหม้หมดที่ 80–100 กม.) 
+    เพื่อเชื่อมโยงข้อมูลสภาพอวกาศ (Space Weather) ครบวงจรตั้งแต่โลกจนถึงดวงจันทร์!
   </div>
   <div class="s-nums" id="sum-nums"></div>
 
@@ -348,19 +404,17 @@
 </div>
 
 <style>
-  /* โหมดดูอย่างเดียว (iframe ฝั่งซ้ายจอ admin) */
   body.spectator #fire   { display:none !important; }
   body.spectator #cross  { opacity:.25; }
   body.spectator #clock  { display:block; font-size:calc(3.4 * var(--u)); opacity:.8; }
   body.spectator .credit { font-size:calc(1.6 * var(--u)); }
   body.spectator #cards  { width:calc(36 * var(--u)); font-size:.9em; }
   body.spectator #teamscore { font-size:calc(3.2 * var(--u)); }
-  /* แถวของตัวเองบนตารางสรุป — หาเจอในพริบตาโดยไม่ต้องอ่านทุกชื่อ */
   #sum-board .s-row.me { background:rgba(89,192,255,.16); border-radius:calc(1 * var(--u)); }
   #sum-board .s-row.me .nm { color:var(--accent); }
   #sum-board .tag { font-size:.75em; opacity:.6; font-weight:400; }
 </style>
-<div class="credit">Meteor data: Global Meteor Network (CC BY 4.0)</div>
+<div class="credit">Meteor Data: Global Meteor Network (CC BY 4.0) · Mission Lore: NARIT Thailand Moonshot</div>
 <div id="err"></div>
 
 <script src="/static/vendor/socket.io.min.js"></script>

@@ -1,11 +1,9 @@
-// mobile-main.js — เกมเต็มที่รันบนมือถือเด็ก (Phase C)
+// mobile-main.js — Thailand CE-7 Moonshot x GMNshooter (Phase C Full Multi-Turret Co-op)
 //
-// ต่างจาก Phase B ตรงที่มือถือไม่ใช่ controller โง่แล้ว — มันเรนเดอร์เกมเองทั้งหมด
-//
-// กฎ co-op ที่ห้ามพลาด (spec §2 / §10):
-//   1. ห้ามลบอุกกาบาตเองตอนยิงโดน — ต้องรอ event `destroyed` จาก server เท่านั้น
-//   2. tracer ที่ยิงไปแล้วต้องวิ่งจนจบเสมอ ถึงเป้าจะถูกเพื่อนยิงไปก่อน (หายกลางอากาศ = ดูเหมือนบั๊ก)
-//   3. เพื่อนยิงโดน = ฉลอง ไม่ใช่ลงโทษ → ระเบิดเป็นสีเพื่อน
+// 1. เรนเดอร์ Three.js พร้อม 3D Space Assets (Moon, Long March 5, CE-7 MATCH, Tracking Dishes)
+// 2. แสดงป้อมปืนของผู้เล่นคนอื่นในห้อง (1–5 คน) พร้อม Sync ทิศทางเล็ง (Aim) และการยิง (Laser Tracers)
+// 3. ระบบเกราะยาน 200 HP และคำนวณ Damage จากความเร็วอุกกาบาต GMN จริง
+// 4. หน้าสรุปผลพร้อมตราเกียรติยศ E-Certificate "Thailand CE-7 Moonshot Ground Guardian"
 
 import * as THREE from 'three';
 import { CFG, DEG, clamp, damp } from './config.js';
@@ -18,16 +16,13 @@ import { createTurret, buildTurretProcedural } from './turret-rig.js';
 import { Sfx } from './audio.js';
 import { ContactLog } from './contact-log.js';
 import { FloatText } from './float-text.js';
+import { SpaceEnvironment } from './space-env.js';
 
 const $ = id => document.getElementById(id);
 
 // ── โหมดจากพารามิเตอร์ใน URL ──────────────────────────────
-// จอ admin ฝั่งซ้ายฝัง iframe หน้านี้ด้วย ?spectate=1 → ดูเกมสดโดยไม่กินสล็อต
 const QS = new URLSearchParams(location.search);
 const SPECTATE = QS.get('spectate') === '1';
-// ?admin=1 = admin กดเริ่มรอบแล้วสับมาเล่นเต็มจอ **ในห้องเดียวกับเด็ก**
-// ส่งรหัส admin ไปกับ join ด้วย — server ใช้ตัดสินว่าให้ชื่อตายตัวว่า admin
-// และให้เข้าห้องได้แม้รอบเพิ่งเริ่ม (ดู on_join ใน app.py)
 const ADMIN_MODE = QS.get('admin') === '1';
 const URL_CODE = (QS.get('code') || '').trim().toUpperCase();
 const panes = ['p-home', 'p-code', 'p-admin', 'p-name', 'p-lobby', 'p-count', 'p-sum'];
@@ -41,14 +36,17 @@ const S = {
   token: null, slot: 0, hex: '#59c0ff', rgb: [0.35, 0.75, 1],
   code: null, name: null,
   roundId: 0, startMs: 0, endMs: 0,
-  schedule: [], spawned: new Set(), destroyed: new Set(),
+  schedule: [], spawned: new Set(), destroyed: new Set(), missed: new Set(),
   playing: false,
   score: 0, combo: 0, kills: 0,
   phase: 'normal', stormHits: 0, stormTotal: 0,
-  stormStartSec: 50, stormPassRate: 0.6, stormMinScale: 0.6,
+  stormStartSec: 40, stormPassRate: 0.55, stormMinScale: 0.6,
   offset: 0, bestRtt: Infinity,
   lastFireAt: -1e9,
+  lastAimEmit: 0,
   spectator: SPECTATE,
+  // ยานอวกาศ & เกราะ
+  shipHp: 200, shipMaxHp: 200,
   // QTE ปิดท้ายรอบ
   qteOn: false, qteNeed: 0, qteHits: 0, qteEndMs: 0, qteMeteorId: 0,
 };
@@ -76,7 +74,6 @@ sock.on('time_sync', d => {
 sock.on('connect', () => {
   syncClock();
   if (S.spectator) { sock.emit('spectate', { code: URL_CODE }); return; }
-  // มาจากจอ admin พร้อมรหัสห้องแล้ว → เข้าเลยไม่ต้องพิมพ์
   if (URL_CODE) {
     sock.emit('join_room_code', { code: URL_CODE,
       token: sessionStorage.getItem('spaceht_token'),
@@ -85,10 +82,9 @@ sock.on('connect', () => {
   }
   const t = sessionStorage.getItem('spaceht_token');
   const c = sessionStorage.getItem('spaceht_code');
-  if (t && c) sock.emit('join_room_code', { code: c, token: t });   // หลุดแล้วกลับมา
+  if (t && c) sock.emit('join_room_code', { code: c, token: t });
 });
 
-// ดูอย่างเดียว — ข้ามหน้ากรอกรหัส/ตั้งชื่อทีมไปที่ฉากเลย
 sock.on('spectating', d => {
   S.code = d.code;
   $('lobby-code').textContent = d.code;
@@ -110,10 +106,8 @@ sock.on('joined', d => {
   document.documentElement.style.setProperty('--me', d.hex);
   $('lobby-code').textContent = d.code;
   $('lobby-name').textContent = S.name || '—';
-  // ทุกคนพิมพ์ชื่อของตัวเอง — ชื่อนี้ขึ้น leaderboard (admin ได้ชื่อตายตัวมาแล้ว)
   pane(d.needName ? 'p-name' : 'p-lobby');
   armNoSleep();
-  // admin เพิ่งลงมาถึงห้องของตัวเอง → สั่งเริ่มได้แล้ว (ต้อง join ก่อนถึงจะมีผู้เล่นในห้อง)
   if (ADMIN_MODE) sock.emit('admin_room_start', { pw: sessionStorage.getItem('ht_pw') || '' });
 });
 
@@ -124,11 +118,42 @@ sock.on('error_msg', d => {
 });
 sock.on('name_set', d => { S.name = d.name; $('lobby-name').textContent = d.name; pane('p-lobby'); });
 
+// ══ จัดการป้อมปืนเพื่อนร่วมทีม (Multi-Turret Sync) ═════════
+const otherTurrets = new Map(); // slot -> TurretRig
+
+function syncTeammateTurrets(players = []) {
+  for (const p of players) {
+    if (p.slot === S.slot || !p.connected) {
+      if (!p.connected && otherTurrets.has(p.slot)) {
+        const old = otherTurrets.get(p.slot);
+        scene.remove(old.root);
+        otherTurrets.delete(p.slot);
+      }
+      continue;
+    }
+    if (!otherTurrets.has(p.slot)) {
+      const hex = p.hex || '#59c0ff';
+      const colorNum = new THREE.Color(hex).getHex();
+      const rigObj = buildTurretProcedural(colorNum);
+      rigObj.root.rotation.y = Math.PI;
+      rigObj.root.position.set((p.slot - 3) * 3.8, 0, -1.2);
+      scene.add(rigObj.root);
+      otherTurrets.set(p.slot, rigObj);
+
+      createTurret(CFG.assets.turret, colorNum).then(loadedRig => {
+        scene.remove(rigObj.root);
+        loadedRig.root.rotation.y = Math.PI;
+        loadedRig.root.position.set((p.slot - 3) * 3.8, 0, -1.2);
+        scene.add(loadedRig.root);
+        otherTurrets.set(p.slot, loadedRig);
+      }).catch(() => {});
+    }
+  }
+}
+
 sock.on('room', st => {
-  // หาแถวของตัวเองในห้อง — ชื่อเป็นของรายคนแล้ว ไม่ใช่ของห้อง
   const me = (st.players || []).find(p => p.slot === S.slot);
   if (me && !S.spectator) {
-    // ห้องรีเซ็ตหลังจบรอบแล้วชื่อเราหลุด → กลับไปพิมพ์ใหม่
     if (!me.named && S.name && st.state === 'lobby' && !S.playing) {
       S.name = null;
       $('lobby-name').textContent = '—';
@@ -145,12 +170,51 @@ sock.on('room', st => {
     `<div class="dot${p.connected ? ' on' : ''}" style="background:${p.hex}"></div>`).join('');
   const cnt = $('lobby-count');
   if (cnt) cnt.textContent = `${st.playerCount} คน`;
+
+  syncTeammateTurrets(st.players || []);
+});
+
+// รับองศาการเล็งของเพื่อนร่วมทีม
+sock.on('player_aim', d => {
+  const r = otherTurrets.get(d.slot);
+  if (r) r.aim(d.yaw, d.pitch);
+});
+
+// รับ Action การยิงของเพื่อน (Muzzle Flash + Laser Tracer)
+sock.on('player_fire', d => {
+  const r = otherTurrets.get(d.slot);
+  if (r) {
+    r.aim(d.yaw, d.pitch);
+    r.fire();
+  }
+  if (d.from && d.to) {
+    const fromV = new THREE.Vector3(...d.from);
+    const toV = new THREE.Vector3(...d.to);
+    tracers.spawn(fromV, toV, CFG.bullet.travelMs, d.targetId, d.hex);
+  }
+});
+
+// รับ Event ดาเมจยาน Long March 5
+sock.on('ship_damage', d => {
+  S.shipHp = d.shipHp;
+  S.shipMaxHp = d.shipMaxHp;
+  paintShipHp();
+  juice.shake(1.1);
+  sfx.hit(1);
+
+  // แจ้งเตือนดาเมจสีแดงบนหน้าจอ
+  const hitPos = new THREE.Vector3(0, 1.4, -4);
+  floatText.add(hitPos, `-${d.dmg} เกราะยาน! (${d.speed} km/s)`);
+
+  document.body.classList.add('hit-flash');
+  setTimeout(() => document.body.classList.remove('hit-flash'), 180);
 });
 
 sock.on('round_start', d => {
   S.stormStartSec = d.stormStartSec; S.stormPassRate = d.stormPassRate;
   S.stormMinScale = d.stormMinScale; S.phase = 'normal';
   S.stormHits = 0; S.stormTotal = 0;
+  S.shipHp = d.shipHp || 200; S.shipMaxHp = d.shipMaxHp || 200;
   document.body.classList.remove('storm');
   $('stormbar').style.display = 'none';
   contactLog.setStormMode(false);
@@ -161,20 +225,22 @@ sock.on('round_start', d => {
   S.schedule = d.schedule;
   S.spawned = new Set();
   S.destroyed = new Set(d.destroyed || []);
+  S.missed = new Set();
   S.score = 0; S.combo = 0; S.kills = 0;
-  field.reset ? null : null;
   field.active.slice().forEach(m => field.kill(m));
   tracers.reset();
   juice.reset();
   S.playing = true;
   pane('p-count');
   sfx.resume();
+  paintShipHp();
+  syncTeammateTurrets(d.players || []);
 });
 
 sock.on('tick', d => {
-  // server ส่งคะแนนมาทั้งห้อง เราหยิบเฉพาะ slot ของตัวเอง
   if (d.scores) S.score = d.scores[S.slot] ?? S.score;
   if (d.combos) S.combo = d.combos[S.slot] ?? S.combo;
+  if (d.shipHp !== undefined) { S.shipHp = d.shipHp; S.shipMaxHp = d.shipMaxHp; paintShipHp(); }
   S.kills = d.kills;
   if (d.qteNeed !== undefined) { S.qteHits = d.qteHits; S.qteNeed = d.qteNeed; }
   if (d.phase && d.phase !== S.phase) setPhase(d.phase);
@@ -182,7 +248,7 @@ sock.on('tick', d => {
   paintHud(d.timeLeftMs);
 });
 
-// นัดที่ยังไม่ครบ — ทุกเครื่องหดก้อนพร้อมกัน (server เป็นคนนับ ไม่ใช่ client)
+// นัดที่ยังไม่ครบ
 sock.on('damaged', d => {
   const m = field.byId(d.meteorId);
   if (!m) return;
@@ -193,8 +259,6 @@ sock.on('damaged', d => {
 });
 
 // ══ QTE ปิดท้ายรอบ ═════════════════════════════════════════
-// หมดเวลาแล้วยังไม่จบ — ลูกไฟ GMN ดวงที่สว่างที่สุดโผล่กลางซุ้ม ทั้งทีมรัวยิงพร้อมกัน
-// มันก็ยัง "ไหม้หมดกลางอากาศ" เหมือนทุกดวง แค่ให้เวลาเท่ากับหน้าต่าง QTE พอดี
 sock.on('qte_start', d => {
   S.qteOn = true;
   S.qteNeed = d.need; S.qteHits = d.hits || 0;
@@ -202,7 +266,7 @@ sock.on('qte_start', d => {
   S.phase = 'qte';
   document.body.classList.remove('storm');
   $('stormbar').style.display = 'none';
-  contactLog.setStormMode(true);          // เอาพื้นที่จอให้ตัวนับ เหมือนช่วงพายุ
+  contactLog.setStormMode(true);
   document.body.classList.add('qte');
   $('qtebar').style.display = 'block';
   paintQte();
@@ -210,10 +274,10 @@ sock.on('qte_start', d => {
     S.qteMeteorId = d.meteor.id;
     field.spawnFromWire({ ...d.meteor, t0: d.startMs });
   }
-  juice.shake(1.2);
+  juice.shake(1.3);
   sfx.resume();
   $('qtebanner').classList.add('on');
-  setTimeout(() => $('qtebanner').classList.remove('on'), 1600);
+  setTimeout(() => $('qtebanner').classList.remove('on'), 1800);
 });
 
 sock.on('qte_progress', d => {
@@ -237,7 +301,7 @@ function setPhase(ph) {
   S.phase = ph;
   const storm = ph === 'storm';
   document.body.classList.toggle('storm', storm);
-  contactLog.setStormMode(storm);      // §F2 พายุซ่อนการ์ด เอาพื้นที่ให้ตัวนับ
+  contactLog.setStormMode(storm);
   $('stormbar').style.display = storm ? 'block' : 'none';
   if (storm) {
     juice.shake(1.0);
@@ -246,11 +310,11 @@ function setPhase(ph) {
   }
 }
 
-// server ตัดสินแล้วว่าใครยิงโดน — ทุกเครื่องเอาออกพร้อมกันตรงนี้ที่เดียว
+// อุกกาบาตถูกยิงแตก
 sock.on('destroyed', d => {
   S.destroyed.add(d.meteorId);
-  // คะแนน/คอมโบเป็นของคนยิง — คนอื่นยิงโดนเราไม่ได้คะแนนและคอมโบไม่ขยับ
   if (d.slot === S.slot) { S.score = d.score; S.combo = d.combo; }
+  if (d.shipHp !== undefined) { S.shipHp = d.shipHp; paintShipHp(); }
   if (d.stormTotal !== undefined) { S.stormHits = d.stormHits; S.stormTotal = d.stormTotal; }
   const m = field.byId(d.meteorId);
   if (m) {
@@ -264,6 +328,7 @@ sock.on('destroyed', d => {
   }
 });
 
+// ══ จบรอบ & แจก E-Certificate ══════════════════════════════
 sock.on('round_end', d => {
   S.playing = false;
   S.qteOn = false;
@@ -271,15 +336,30 @@ sock.on('round_end', d => {
   document.body.classList.remove('qte');
   $('qtebar').style.display = 'none';
 
-  // บอร์ดเป็นรายบุคคลแล้ว — โชว์ผลของตัวเองเป็นหลัก
   const mine = (d.results || []).find(r => r.slot === S.slot) || {};
   $('sum-team').textContent = mine.name || S.name || '—';
   $('sum-score').textContent = (mine.score || 0).toLocaleString('en-US');
-  $('sum-kills').innerHTML =
-    `สอยได้ <b>${mine.kills || 0}</b> ดวง · คอมโบสูงสุด <b>×${mine.bestCombo || 0}</b>` +
-    (mine.rank ? ` · อันดับ <b>#${mine.rank}</b>` : '');
+  
+  const rank = d.missionRank || 'A';
+  const rankColors = { 'S': '#ffe066', 'A': '#8fffa8', 'B': '#59c0ff', 'C': '#ff4d6d' };
+  const rankNames = {
+    'S': 'RANK S · ผู้พิทักษ์อวกาศไร้ที่ติ',
+    'A': 'RANK A · ภารกิจคุ้มกันยอดเยี่ยม',
+    'B': 'RANK B · ภารกิจสำเร็จลุล่วง',
+    'C': 'RANK C · โหมดฉุกเฉิน / ผ่านการทดสอบ',
+  };
 
-  // ใครในสนามได้เท่าไหร่บ้าง — เห็นทันทีว่าแพ้ชนะใคร
+  $('sum-kills').innerHTML =
+    `<div class="cert-badge" style="border-color:${rankColors[rank] || '#59c0ff'}; color:${rankColors[rank] || '#59c0ff'}">` +
+    `<span class="cert-rank">${rank}</span>` +
+    `<div class="cert-title">${rankNames[rank]}</div>` +
+    `<div class="cert-sub">THAILAND CE-7 MOONSHOT GROUND OBSERVER</div>` +
+    `</div>` +
+    `<div style="margin-top:1.2vh;font-size:calc(3.4*var(--u));">` +
+    `สอยได้ <b>${mine.kills || 0}</b> ดวง · เกราะยานคงเหลือ <b>${d.shipHp || 0}/200 HP</b>` +
+    (mine.rank ? ` · อันดับ <b>#${mine.rank}</b>` : '') +
+    `</div>`;
+
   const sb = $('sum-board');
   if (sb) {
     sb.innerHTML = (d.results || []).map((r, n) =>
@@ -289,7 +369,6 @@ sock.on('round_end', d => {
       `<div class="ct">${(r.score || 0).toLocaleString('en-US')}</div></div>`).join('');
   }
 
-  // "ยิงอะไรไป กล้องชาติไหนบันทึกไว้ อย่างละกี่ดวง" — มาจากดวงที่สอยได้จริงในรอบนี้
   const rows = contactLog.catches();
   $('sum-list').innerHTML = rows.length
     ? rows.map(r =>
@@ -300,8 +379,9 @@ sock.on('round_end', d => {
     : '<div class="s-empty">รอบนี้ยังไม่ได้สักดวง ลองใหม่อีกรอบ</div>';
 
   $('sum-nums').innerHTML =
-    `<div class="sc"><span>อุกกาบาตในฐานข้อมูล</span><b data-to="${d.gmnTotal || 0}">0</b></div>` +
-    `<div class="sc"><span>กล้องบนหลังคาทั่วโลก</span><b data-to="${d.gmnCameras}" data-pre="~">0</b></div>`;
+    `<div class="sc"><span>สถานะอุปกรณ์ไทย CE-7 MATCH</span><b style="color:#8fffa8">ONLINE & ACTIVE 🇹🇭</b></div>` +
+    `<div class="sc"><span>อุกกาบาตจริงในฐานข้อมูล</span><b data-to="${d.gmnTotal || 0}">0</b></div>` +
+    `<div class="sc"><span>กล้องเครือข่าย GMN ทั่วโลก</span><b data-to="${d.gmnCameras}" data-pre="~">0</b></div>`;
   countUp($('sum-nums'));
 
   pane('p-sum');
@@ -312,7 +392,7 @@ sock.on('round_end', d => {
   if (S.spectator) setTimeout(() => { pane(null); }, 14000);
 });
 
-// ══ UI ════════════════════════════════════════════════════
+// ══ UI Events ═════════════════════════════════════════════
 $('code-go').onclick = () => {
   const c = $('code').value.trim().toUpperCase();
   $('code-err').textContent = '';
@@ -321,7 +401,6 @@ $('code-go').onclick = () => {
 if (URL_CODE && $('code')) $('code').value = URL_CODE;
 $('code').addEventListener('keydown', e => { if (e.key === 'Enter') $('code-go').click(); });
 
-// หน้าแรกแยก 2 ทาง — เด็กกรอกรหัสห้อง / ผู้ดูแลกรอกรหัสผ่าน
 $('go-player').onclick = () => { $('code-err').textContent = ''; pane('p-code'); $('code').focus(); };
 $('go-admin').onclick  = () => { $('apw-err').textContent = '';  pane('p-admin'); };
 $('code-back').onclick = () => pane('p-home');
@@ -332,7 +411,7 @@ $('apw-go').onclick = () => sock.emit('admin_login', { pw: $('apw').value });
 $('apw').addEventListener('keydown', e => { if (e.key === 'Enter') $('apw-go').click(); });
 sock.on('admin_login', d => {
   if (d.ok) {
-    sessionStorage.setItem('ht_pw', $('apw').value);   // /admin หยิบไปใช้ต่อ ไม่ต้องกรอกซ้ำ
+    sessionStorage.setItem('ht_pw', $('apw').value);
     location.href = '/admin';
   } else {
     $('apw-err').textContent = 'รหัสผ่านไม่ถูก';
@@ -345,7 +424,6 @@ $('name-go').onclick = () => {
   sock.emit('set_name', { name: $('name').value });
 };
 
-// ผู้เล่นไม่มีปุ่มเริ่ม — admin เป็นคนกด คนอื่นจะได้ทยอยเข้าจนครบก่อน
 $('again').onclick = () => pane('p-lobby');
 
 // ══ กันจอดับ ══════════════════════════════════════════════
@@ -354,18 +432,15 @@ try { noSleep = new window.NoSleep(); } catch (e) {}
 function armNoSleep() {
   if (armed || !noSleep) return;
   armed = true;
-  // enable() คืน Promise — try/catch ธรรมดาจับ rejection ไม่ได้ ต้อง .catch()
-  // ไม่งั้นเวลาเด็กสลับแอปแล้วกลับมา จะมีแถบแดง "WakeLock: page is not visible"
-  // ขึ้นทั้งที่เกมไม่ได้พังอะไรเลย
   try {
     const p = noSleep.enable();
-    if (p && p.catch) p.catch(() => { armed = false; });   // ปล่อยให้ลองใหม่ตอนแตะครั้งหน้า
+    if (p && p.catch) p.catch(() => { armed = false; });
   } catch (e) { armed = false; }
 }
 document.addEventListener('touchend', armNoSleep);
 document.addEventListener('click', armNoSleep);
 
-// ══ ฉาก ═══════════════════════════════════════════════════
+// ══ ฉาก Three.js ═════════════════════════════════════════
 const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, CFG.perf.maxPixelRatio));
 renderer.setSize(window.innerWidth, window.innerHeight);
@@ -375,10 +450,10 @@ const scene = new THREE.Scene();
 scene.add(buildSky());
 scene.add(buildCity());
 scene.add(buildArcMarkers());
-scene.add(new THREE.HemisphereLight(0x35509a, 0x05070d, 1.1));
-const moon = new THREE.DirectionalLight(0xa8c4ff, 1.6);
-moon.position.set(-40, 60, 30);
-scene.add(moon);
+scene.add(new THREE.HemisphereLight(0x35509a, 0x05070d, 1.2));
+const moonLight = new THREE.DirectionalLight(0xa8c4ff, 1.8);
+moonLight.position.set(-140, 250, -420);
+scene.add(moonLight);
 
 const camera = new THREE.PerspectiveCamera(
   CFG.camera.fov, window.innerWidth / window.innerHeight, CFG.camera.near, CFG.camera.far);
@@ -386,11 +461,12 @@ camera.rotation.order = 'YXZ';
 
 const juice = new Juice(scene, camera);
 const field = new MeteorField(scene, camera);
-field.networked = true;                 // ห้ามเกิดเอง — เดินตามตารางที่ server ส่งมา
+field.networked = true;
 field.load();
 const sfx = new Sfx();
 const contactLog = new ContactLog(document.getElementById('cardlist'));
 const floatText = new FloatText(camera);
+const spaceEnv = new SpaceEnvironment(scene);
 
 let rig = buildTurretProcedural(0x59c0ff);
 rig.root.rotation.y = Math.PI;
@@ -402,25 +478,12 @@ createTurret(CFG.assets.turret, 0x59c0ff).then(r => {
 
 const look = new TouchLook($('scene'));
 
-// ══ เล่นบนคอม ═════════════════════════════════════════════
-// หน้านี้ออกแบบมาสำหรับมือถือ แต่ admin เล่นเต็มจอบนโน้ตบุ๊กทุกรอบ
-// ถ้าไม่รองรับเมาส์ให้ดี admin จะเจอเกมคนละเกมกับเด็ก
 const DESKTOP = !!(window.matchMedia && window.matchMedia('(pointer: fine)').matches);
 if (DESKTOP) {
   document.body.classList.add('desktop', 'unlocked');
   look.onLockChange = (on) => document.body.classList.toggle('unlocked', !on);
 }
 
-/**
- * วงเล็งต้องผูกกับกรวย aim assist จริง ไม่ใช่สัดส่วนของจอ
- *
- * เดิมวงกว้าง 14vw = 269px บนจอ 1920 ซึ่งกินมุม ~8.9°
- * แต่ aim assist ทำงานแค่ในกรวย lockOnDeg → ของที่ "อยู่ในวง" แล้วยิงไม่โดน
- * เพราะจริงๆ มันอยู่นอกกรวย ผู้เล่นไม่มีทางรู้เลยว่าทำไมยิงแล้วไม่มีอะไรเกิดขึ้น
- *
- * ตั้งให้ "เส้นผ่าศูนย์กลางวง = รัศมีของกรวย" — วงเล็กกว่ากรวยจริงเท่าตัว
- * ตั้งให้เท่ากรวยเป๊ะจะได้วงใหญ่จนบังจอ สัญญาจึงเป็น "เข้าวง = โดนแน่" ไม่ใช่ "นอกวง = ไม่โดน"
- */
 function sizeCross() {
   const half = Math.tan(CFG.camera.fov * DEG / 2);
   const px = (Math.tan(CFG.assist.lockOnDeg * DEG) / half) * window.innerHeight;
@@ -449,7 +512,7 @@ class Tracers {
     this._up = new THREE.Vector3(0, 1, 0);
     this._tmp = new THREE.Vector3();
   }
-  spawn(from, to, durMs, targetId) {
+  spawn(from, to, durMs, targetId, customHex) {
     const it = this.items.find(i => !i.active) || this.items[0];
     it.start.copy(from); it.dir.copy(to).sub(from);
     it.dist = it.dir.length();
@@ -458,6 +521,11 @@ class Tracers {
     it.mesh.quaternion.setFromUnitVectors(this._up, it.dir);
     it.t = 0; it.dur = durMs; it.active = true; it.mesh.visible = true;
     it.targetId = targetId || 0;
+    if (customHex) {
+      it.mesh.material.color.set(customHex);
+    } else {
+      it.mesh.material.color.set(CFG.bullet.color);
+    }
     return it;
   }
   update(dt, onArrive) {
@@ -471,7 +539,6 @@ class Tracers {
       this._tmp.copy(it.start).addScaledVector(it.dir, travelled - len * .5);
       it.mesh.position.copy(this._tmp);
       it.mesh.scale.set(1, Math.max(.001, len), 1);
-      // เป้าถูกเพื่อนยิงไปแล้ว → จางลงแทนที่จะหายวับ (spec §2)
       it.mesh.material.opacity = it.targetId && S.destroyed.has(it.targetId)
         ? .95 * (1 - u) : .95;
       if (u >= 1) {
@@ -504,11 +571,10 @@ function pickTarget() {
 }
 
 const _mp = new THREE.Vector3(), _md = new THREE.Vector3();
-const _aim = new THREE.Vector3(), _end = new THREE.Vector3(), _raw = new THREE.Vector3();
+const _aim = new THREE.Vector3(), _end = new THREE.Vector3();
 
 function fire() {
-  if (S.spectator) return;
-  if (!S.playing) return;
+  if (S.spectator || !S.playing) return;
   const t = serverNow();
   if (t - S.lastFireAt < CFG.bullet.fireCooldownMs) return;
   S.lastFireAt = t;
@@ -517,47 +583,34 @@ function fire() {
   if (S.qteOn) { sock.emit('qte_tap', {}); } else { sock.emit('shot', {}); }
 
   rig.getMuzzle(_mp, _md);
-  const { target, err } = pickTarget();
+  const { target } = pickTarget();
 
   if (target) {
-    // ล็อกได้ = กระสุนเข้าเป้า ไม่มีเงื่อนไขซ่อนอีกชั้น
-    //
-    // ของเดิมมี 2 ด่าน: ต้องล็อกติด *และ* กระสุนต้องตกใกล้ก้อนพอ
-    // แต่ด่านที่สองมองไม่เห็น — เด็กเห็นวงแดง กดยิง แล้วไม่มีอะไรเกิดขึ้น
-    // โดยไม่มีทางรู้ว่าทำไม (วัดจริง: เล็งพลาด ±2° โดนแค่ 16-36%)
-    // ตอนนี้วงเล็งถูกวาดเท่ากรวย lockOnDeg เป๊ะ → วงกลายเป็นสัญญาที่เชื่อถือได้
-    // "เข้าวงแดง = โดน" — ความยากอยู่ที่การเล็งตามเป้าที่เคลื่อนที่ ไม่ใช่ด่านลับ
     field.predict(target, t, CFG.bullet.travelMs, _end);
-    const shot = tracers.spawn(_mp, _end, CFG.bullet.travelMs, target.id);
+    const shot = tracers.spawn(_mp, _end, CFG.bullet.travelMs, target.id, S.hex);
     if (shot) shot.fireT = t;
+    sock.emit('player_fire', { targetId: target.id, from: _mp.toArray(), to: _end.toArray(), yaw: look.yaw, pitch: look.pitch });
   } else {
     dirFrom(look.yaw, look.pitch, _aim);
     _end.copy(_mp).addScaledVector(_aim, CFG.bullet.missSpeed * CFG.bullet.missMs * .001);
-    tracers.spawn(_mp, _end, CFG.bullet.missMs, 0);
+    tracers.spawn(_mp, _end, CFG.bullet.missMs, 0, S.hex);
+    sock.emit('player_fire', { targetId: 0, from: _mp.toArray(), to: _end.toArray(), yaw: look.yaw, pitch: look.pitch });
   }
 }
 
-/**
- * กระสุนถึงปลายทาง — นัดนี้นับว่าโดนไหม
- *
- * targetId มีค่าก็ต่อเมื่อเล็งติดตอนยิงเท่านั้น → นัดนั้นโดน
- * เด็กเห็นวงแดง กดยิง ก้อนแตก — กฎเดียวจบ ไม่มีเงื่อนไขลับที่มองไม่เห็น
- * การ dedupe ยังเป็นของ server เหมือนเดิม client ไม่ได้ตัดสินเอง
- */
 function onArrive(it, pos) {
   if (!it.targetId || !S.playing || S.qteOn) return;
-  if (S.destroyed.has(it.targetId)) return;      // เพื่อนยิงไปก่อนแล้ว
-  if (!field.byId(it.targetId)) return;          // ไหม้หมดก่อนกระสุนถึง
+  if (S.destroyed.has(it.targetId)) return;
+  if (!field.byId(it.targetId)) return;
   sock.emit('kill', { meteorId: it.targetId });
 }
 
-// ปุ่มยิง — กดค้างยิงรัว และลากนิ้วอีกข้างเล็งไปพร้อมกันได้
+// ปุ่มยิง
 const fb = $('fire');
 let holding = false;
 function holdLoop() {
   if (!holding) return;
   fire();
-  // ตอน QTE ต้อง "รัว" จริงๆ — กดค้างแล้วยิงเองไม่นับ ไม่งั้นวางนิ้วทิ้งไว้ก็ผ่าน
   if (S.qteOn) return;
   setTimeout(holdLoop, CFG.touch.fireRepeatMs);
 }
@@ -571,14 +624,13 @@ fb.addEventListener('touchstart', e => {
 fb.addEventListener('mousedown', () => { holding = true; fb.classList.add('down'); holdLoop(); });
 window.addEventListener('mouseup', () => { holding = false; fb.classList.remove('down'); });
 
-// ล็อกเมาส์อยู่ = คลิกที่ไหนก็ยิง (ปุ่ม "ยิง" ถูกซ่อนไปแล้วบนคอม)
 window.addEventListener('mousedown', (e) => {
   if (!look.locked || e.button !== 0) return;
   holding = true; holdLoop();
 });
 window.addEventListener('mouseup', () => { holding = false; });
 
-// ══ คุณภาพอัตโนมัติ (§8) ══════════════════════════════════
+// ══ คุณภาพอัตโนมัติ ════════════════════════════════════════
 let probeFrames = 0, probeStart = 0, qualityLocked = false;
 function probeQuality(now) {
   if (qualityLocked) return;
@@ -589,7 +641,6 @@ function probeQuality(now) {
   const fps = probeFrames / el;
   qualityLocked = true;
   if (fps < CFG.quality.lowFps) {
-    // เครื่องไม่ไหว — ลดของหนักก่อนที่เด็กจะรู้สึกว่ามันกระตุก
     renderer.setPixelRatio(CFG.quality.lowPixelRatio);
     renderer.setSize(window.innerWidth, window.innerHeight);
     CFG.explosion.particles = Math.round(CFG.explosion.particles * CFG.quality.lowParticleScale);
@@ -597,12 +648,31 @@ function probeQuality(now) {
       juice.lights.forEach(l => { l.light.visible = false; });
       if (rig && rig.light) rig.light.visible = false;
     }
-    S.lowQuality = true;
   }
-  S.measuredFps = Math.round(fps);
 }
 
-// ══ HUD ═══════════════════════════════════════════════════
+// ══ HUD Painting ══════════════════════════════════════════
+function paintShipHp() {
+  const hpEl = $('ship-hp-num');
+  const barEl = $('ship-hp-fill');
+  const altEl = $('ship-alt-num');
+  if (!hpEl || !barEl) return;
+
+  const pct = Math.max(0, Math.min(100, (S.shipHp / S.shipMaxHp) * 100));
+  hpEl.textContent = `${S.shipHp} / ${S.shipMaxHp} HP`;
+  barEl.style.width = pct + '%';
+
+  const isEmergency = S.shipHp <= 0;
+  barEl.classList.toggle('emergency', isEmergency);
+  document.body.classList.toggle('emergency-mode', isEmergency);
+
+  if (altEl && spaceEnv) {
+    altEl.textContent = spaceEnv.rocketAltKm >= 1000
+      ? `${(spaceEnv.rocketAltKm / 1000).toFixed(0)}k km (Moon Orbit)`
+      : `${spaceEnv.rocketAltKm.toFixed(0)} km`;
+  }
+}
+
 function paintHud(leftMs) {
   if (S.phase === 'storm' && S.stormTotal) {
     const need = Math.ceil(S.stormTotal * S.stormPassRate);
@@ -621,10 +691,13 @@ function paintHud(leftMs) {
   const c = $('combo');
   c.textContent = `COMBO ×${S.combo}`;
   c.classList.toggle('on', S.combo >= 2);
+  paintShipHp();
 }
 
-// ══ loop ══════════════════════════════════════════════════
+// ══ Loop ══════════════════════════════════════════════════
 let last = performance.now();
+const burnedOutBuffer = [];
+
 function frame(nowReal) {
   requestAnimationFrame(frame);
   const dt = Math.min((nowReal - last) * .001, CFG.perf.maxDt);
@@ -640,14 +713,14 @@ function frame(nowReal) {
     pane(null);
   }
 
-  // เดินตารางอุกกาบาตที่ server ส่งมา — ทุกเครื่องได้ชุดเดียวกันเป๊ะ
+  // เดินตารางอุกกาบาต
   if (S.playing && t >= S.startMs) {
     for (const w of S.schedule) {
       if (S.spawned.has(w.id)) continue;
       const abs = S.startMs + w.t0;
-      if (t < abs) break;                       // schedule เรียงตามเวลาแล้ว
+      if (t < abs) break;
       S.spawned.add(w.id);
-      if (S.destroyed.has(w.id)) continue;      // ถูกยิงไปตอนเรายังไม่เข้า
+      if (S.destroyed.has(w.id)) continue;
       field.spawnFromWire({ ...w, t0: abs });
     }
   }
@@ -659,14 +732,37 @@ function frame(nowReal) {
   const sh = juice.shakeOffset;
   camera.rotation.set(look.pitch + sh.pitch, look.yaw + sh.yaw, sh.roll, 'YXZ');
 
+  // ป้อมปืนตัวเอง
   rig.aim(look.yaw, look.pitch);
   rig.update(dt);
 
-  field.update(t);
+  // Sync ป้อมปืนของเพื่อนร่วมทีม
+  otherTurrets.forEach(r => r.update(dt));
+
+  // ส่งมุมเล็งตัวเองให้เพื่อนแบบ Throttled ~20Hz
+  if (S.playing && (nowReal - S.lastAimEmit > 50)) {
+    S.lastAimEmit = nowReal;
+    sock.emit('player_aim', { yaw: look.yaw, pitch: look.pitch });
+  }
+
+  // อัปเดตอุกกาบาต + เช็คดวงที่ไหม้หมดโดยไม่มีใครยิงทัน (Missed -> ยานโดนดาเมจ)
+  field.update(t, burnedOutBuffer);
+  for (const bm of burnedOutBuffer) {
+    if (!S.destroyed.has(bm.id) && !S.missed.has(bm.id)) {
+      S.missed.add(bm.id);
+      sock.emit('miss', { meteorId: bm.id });
+    }
+  }
+
   tracers.update(dt, onArrive);
   juice.update(dt, dt);
   contactLog.update(dt);
   floatText.update(dt);
+
+  // อัปเดตวัตถุอวกาศ 3D (ดวงจันทร์, จรวด Long March 5, CE-7 Probe, จานเรดาร์)
+  const elapsedSec = (t - S.startMs) * 0.001;
+  const qteRate = S.qteNeed ? Math.min(1.0, S.qteHits / S.qteNeed) : 0;
+  spaceEnv.update(dt, elapsedSec, S.phase, qteRate);
 
   if (S.qteOn) {
     const left = Math.max(0, (S.qteEndMs - t) / 1000);
@@ -686,14 +782,13 @@ window.addEventListener('resize', () => {
   sizeCross();
 });
 
-/** นับเลขขึ้น — 472,388 ที่ค่อยๆ ไต่ขึ้นให้ความรู้สึกถึงสเกลมากกว่าโชว์ทันที */
 function countUp(root, ms = 1400) {
   for (const el of root.querySelectorAll('b[data-to]')) {
     const to = +el.dataset.to, pre = el.dataset.pre || '';
     const t0 = performance.now();
     const step = () => {
       const k = Math.min(1, (performance.now() - t0) / ms);
-      const e = 1 - Math.pow(1 - k, 3);        // ช้าลงตอนท้าย
+      const e = 1 - Math.pow(1 - k, 3);
       el.textContent = pre + Math.round(to * e).toLocaleString('en-US');
       if (k < 1) requestAnimationFrame(step);
     };
@@ -711,4 +806,4 @@ function escapeHtml(s) {
 
 pane(ADMIN_MODE || URL_CODE || SPECTATE ? 'p-lobby' : 'p-home');
 requestAnimationFrame(frame);
-window.__c = { S, field, look, juice, sock, tracers, camera, serverNow };
+window.__c = { S, field, look, juice, sock, tracers, camera, serverNow, spaceEnv };

@@ -502,6 +502,8 @@ def _round_payload(room):
             "schedule": room.schedule,          # ตารางทั้งรอบ ส่งครั้งเดียว
             "destroyed": list(room.destroyed.keys()),
             "players": [p.public() for p in room.active()],
+            "shipHp": room.ship_hp,
+            "shipMaxHp": room.ship_max_hp,
         }
 
 
@@ -517,7 +519,62 @@ def _qte_payload(room):
             "need": room.qte_need,
             "hits": room.qte_hits,
             "meteor": room.qte_wire,
+            "shipHp": room.ship_hp,
+            "shipMaxHp": room.ship_max_hp,
         }
+
+
+@socketio.on("player_aim")
+@safe
+def on_player_aim(data=None):
+    """ส่งมุมเล็ง (yaw/pitch) ไปให้ผู้เล่นคนอื่นในห้องเห็นป้อมหมุนตามแบบ realtime"""
+    room = rooms.room_of_sid(request.sid)
+    if room and room.state in ("playing", "qte", "countdown"):
+        p = room.player_of_sid(request.sid)
+        if p:
+            d = data or {}
+            socketio.emit("player_aim", {
+                "slot": p.slot,
+                "yaw": d.get("yaw", 0),
+                "pitch": d.get("pitch", 0),
+            }, to=room.code, include_self=False)
+
+
+@socketio.on("player_fire")
+@safe
+def on_player_fire(data=None):
+    """ส่ง action การยิง (Muzzle Flash + Laser Tracer) ไปยังเพื่อนร่วมทีมทุกคน"""
+    room = rooms.room_of_sid(request.sid)
+    if room and room.state in ("playing", "qte"):
+        p = room.player_of_sid(request.sid)
+        if p:
+            p.shots += 1
+            d = data or {}
+            socketio.emit("player_fire", {
+                "slot": p.slot,
+                "hex": p.hex,
+                "rgb": p.rgb,
+                "yaw": d.get("yaw", 0),
+                "pitch": d.get("pitch", 0),
+                "from": d.get("from"),
+                "to": d.get("to"),
+                "targetId": d.get("targetId", 0),
+            }, to=room.code, include_self=False)
+
+
+@socketio.on("miss")
+@safe
+def on_miss(data=None):
+    """อุกกาบาตหลุดรอดไปชนแนวบินของยาน Long March 5 — หัก HP ยานตามความเร็วจริง"""
+    room = rooms.room_of_sid(request.sid)
+    if room and room.state in ("playing", "qte"):
+        try:
+            mid = int((data or {}).get("meteorId", 0))
+        except (TypeError, ValueError):
+            return
+        res = room.record_miss(mid)
+        if res:
+            socketio.emit("ship_damage", res, to=room.code)
 
 
 @socketio.on("shot")
@@ -617,6 +674,7 @@ def _round_watcher():
                         "phase": "qte",
                         "qteHits": room.qte_hits, "qteNeed": room.qte_need,
                         "stormHits": room.storm_hits, "stormTotal": room.storm_total,
+                        "shipHp": room.ship_hp, "shipMaxHp": room.ship_max_hp,
                     }, to=room.code)
                 elif room.state == "playing":
                     socketio.emit("tick", {
@@ -627,6 +685,7 @@ def _round_watcher():
                         # client ใช้ phase ตัดสินว่าจะซ่อนการ์ด/โชว์ตัวนับพายุเมื่อไร
                         "phase": room.phase(),
                         "stormHits": room.storm_hits, "stormTotal": room.storm_total,
+                        "shipHp": room.ship_hp, "shipMaxHp": room.ship_max_hp,
                     }, to=room.code)
                 elif room.state == "ended" and room.ended_for(C.RESET_AFTER_SEC):
                     # กลับ lobby เองหลังจบรอบ — บูธจะได้ต่อคิวรอบถัดไปได้เลย
@@ -650,6 +709,7 @@ def _finish_round(room):
         passed, mult, rate = room.storm_result()
         qte_passed, qte_bonus, qte_rate = room.qte_result()
         players = room.active()
+        mission_rank = room.calc_rank()
 
         results = board.submit_round(
             [{"name": p.display, "raw": p.score, "kills": p.kills,
@@ -688,6 +748,10 @@ def _finish_round(room):
             "gmnTotal": gmn_db.count(),
             "gmnCameras": C.GMN_CAMERAS_WORLDWIDE,
             "top": board.top(10),               # บอร์ดเดียว รวม admin ด้วย
+            "shipHp": room.ship_hp,
+            "shipMaxHp": room.ship_max_hp,
+            "missionRank": mission_rank,
+            "ce7Status": "ONLINE & SCANNING",
         }
     socketio.emit("round_end", summary, to=room.code)
     _emit_room(room)
