@@ -1,13 +1,12 @@
-// mobile-main.js — Thailand CE-7 Moonshot x GMNshooter (Cinematic Story Opening, Pilot Flight Controls & Team Co-op)
+// mobile-main.js — Thailand CE-7 Moonshot x GMNshooter (True 3D Space Flight Simulation & Co-op)
 //
-// 1. Full Black Screen Cinematic Story Sequence (4-Act Timeline with Thai Male Voice TTS)
-// 2. Dual Role Gameplay:
-//    - 🚀 FLIGHT OPS (PILOT): บังคับทิศทางยาน Long March 5 บินในอวกาศ (W/A/S/D / Flight Stick)
-//      ระบบนำร่องสู่ดวงจันทร์ (Distance to Moon KM / Lunar Waypoint Rings / Boost Thrusters / Pulse Shield)
+// 1. True 3D Flight Physics (Pitch, Yaw, Roll, Velocity, Forward Thrust & Afterburners)
+// 2. Full PC (WASD + Mouse Flight Simulator) & Mobile (360° 3D Flight Stick + Boost Button)
+// 3. Full Black Screen Cinematic Story Sequence (4-Act Timeline with Thai Male Voice TTS)
+// 4. Dual Role Gameplay:
+//    - 🚀 FLIGHT OPS (PILOT): บังคับทิศทางยาน Long March 5 บินในอวกาศแบบ 3D แท้ๆ
 //    - 📡 GROUND CREW: พลเลเซอร์ภาคพื้นดิน ยิงสแกน/สกัดกั้นสะเก็ดดาว GMN คุ้มกันแนวบินยาน
-// 3. ระบบคะแนนรวมของทั้งทีม (Team Score & Team Combo)
-// 4. Multi-Turret Sync & Real-time Spacecraft Flight Sync
-// 5. E-Certificate เกียรติยศระดับทีม
+// 5. ระบบคะแนนรวมของทั้งทีม (Team Score & Team Combo) & E-Certificate
 
 import * as THREE from 'three';
 import { CFG, DEG, clamp, damp } from './config.js';
@@ -190,9 +189,10 @@ const S = {
   shipHp: 200, shipMaxHp: 200,
   qteOn: false, qteNeed: 0, qteHits: 0, qteEndMs: 0, qteMeteorId: 0,
 
-  pilotSteerX: 0,
-  pilotSteerY: 0,
-  pilotBoost: false,
+  // 3D Flight Control Inputs
+  pitchInput: 0, // +1 = Climb / -1 = Dive
+  yawInput: 0,   // -1 = Left / +1 = Right
+  isBoosting: false,
 };
 const serverNow = () => performance.now() + S.offset;
 
@@ -672,13 +672,13 @@ $('pulse-shield-btn').onclick = () => {
 // ปุ่ม Boost ของคนคุมยาน
 const boostBtn = $('btn-boost');
 if (boostBtn) {
-  boostBtn.addEventListener('mousedown', () => { S.pilotBoost = true; sfx.boost(); });
-  window.addEventListener('mouseup', () => { S.pilotBoost = false; });
-  boostBtn.addEventListener('touchstart', e => { S.pilotBoost = true; sfx.boost(); e.preventDefault(); }, { passive: false });
-  ['touchend', 'touchcancel'].forEach(ev => boostBtn.addEventListener(ev, () => { S.pilotBoost = false; }));
+  boostBtn.addEventListener('mousedown', () => { S.isBoosting = true; sfx.boost(); });
+  window.addEventListener('mouseup', () => { S.isBoosting = false; });
+  boostBtn.addEventListener('touchstart', e => { S.isBoosting = true; sfx.boost(); e.preventDefault(); }, { passive: false });
+  ['touchend', 'touchcancel'].forEach(ev => boostBtn.addEventListener(ev, () => { S.isBoosting = false; }));
 }
 
-// ══ Virtual Flight Stick สำหรับคนคุมยาน ════════════════════
+// ══ Virtual 3D Flight Stick สำหรับคนคุมยาน (Mobile 360° Analog) ════
 const stickZone = $('flight-stick-zone');
 const stickThumb = $('flight-stick-thumb');
 let stickActive = false, stickCenter = { x: 0, y: 0 };
@@ -687,15 +687,17 @@ if (stickZone && stickThumb) {
   function handleStick(clientX, clientY) {
     const dx = clientX - stickCenter.x;
     const dy = clientY - stickCenter.y;
-    const maxR = 48.0;
+    const maxR = 50.0;
     const len = Math.hypot(dx, dy);
     const clampedR = Math.min(maxR, len);
     const ang = Math.atan2(dy, dx);
     const nx = (Math.cos(ang) * clampedR) / maxR;
     const ny = (Math.sin(ang) * clampedR) / maxR;
 
-    S.pilotSteerX = nx;
-    S.pilotSteerY = -ny; // Y ขึ้น = เชิดหัว
+    // nx: เลี้ยวซ้าย/ขวา (Yaw)
+    // -ny: ลากขึ้น = เชิดหัวขึ้น (+Pitch) / ลากลง = กดหัวลง (-Pitch)
+    S.yawInput = nx;
+    S.pitchInput = -ny;
 
     stickThumb.style.transform = `translate(${nx * maxR}px, ${ny * maxR}px)`;
   }
@@ -713,7 +715,7 @@ if (stickZone && stickThumb) {
     if (!stickActive) return;
     for (let i = 0; i < e.touches.length; i++) {
       const t = e.touches[i];
-      if (Math.hypot(t.clientX - stickCenter.x, t.clientY - stickCenter.y) < 140) {
+      if (Math.hypot(t.clientX - stickCenter.x, t.clientY - stickCenter.y) < 160) {
         handleStick(t.clientX, t.clientY);
         break;
       }
@@ -723,13 +725,13 @@ if (stickZone && stickThumb) {
   ['touchend', 'touchcancel'].forEach(ev => window.addEventListener(ev, () => {
     if (!stickActive) return;
     stickActive = false;
-    S.pilotSteerX = 0;
-    S.pilotSteerY = 0;
+    S.yawInput = 0;
+    S.pitchInput = 0;
     stickThumb.style.transform = 'translate(0px, 0px)';
   }));
 }
 
-// ══ คีย์บอร์ดควบคุมการบินสำหรับ Desktop ══════════════════════
+// ══ PC / Desktop 3D Flight Controls (Keyboard WASD + Mouse) ════
 const keys = { w: false, a: false, s: false, d: false, space: false };
 window.addEventListener('keydown', e => {
   if (S.role !== 'spaceship') return;
@@ -748,6 +750,14 @@ window.addEventListener('keyup', e => {
   if (k === 'w' || k === 'arrowup') keys.w = false;
   if (k === 's' || k === 'arrowdown') keys.s = false;
   if (k === ' ' || k === 'shift') keys.space = false;
+});
+
+// เมาส์ช่วยบังคับทิศทางยานในโหมด 3D Flight บน PC
+let mouseYaw = 0, mousePitch = 0;
+window.addEventListener('mousemove', e => {
+  if (S.role !== 'spaceship' || !S.playing || !look.locked) return;
+  mouseYaw = clamp(e.movementX * 0.08, -1.0, 1.0);
+  mousePitch = clamp(-e.movementY * 0.08, -1.0, 1.0);
 });
 
 $('again').onclick = () => pane('p-lobby');
@@ -1071,31 +1081,47 @@ function frame(nowReal) {
     }
   }
 
-  // บังคับการบิน (Pilot Flight Steering & Navigation)
+  // ══ 3D Flight Physics Controls (สำหรับคนคุมยาน) ════════════
   if (S.role === 'spaceship') {
-    let sx = S.pilotSteerX;
-    let sy = S.pilotSteerY;
-    if (keys.a) sx = -1;
-    if (keys.d) sx = 1;
-    if (keys.w) sy = 1;
-    if (keys.s) sy = -1;
-    const boost = S.pilotBoost || keys.space;
+    // รวบรวม Input จากคีย์บอร์ด, เมาส์, และ Virtual Touch Joystick
+    let pIn = S.pitchInput;
+    let yIn = S.yawInput;
 
-    spaceEnv.setSteer(sx, sy, boost);
+    // W/Up = เชิดหัวขึ้น (+1) / S/Down = กดหัวลง (-1)
+    if (keys.w) pIn += 1.0;
+    if (keys.s) pIn -= 1.0;
+    // A/Left = เลี้ยวซ้าย (-1) / D/Right = เลี้ยวขวา (+1)
+    if (keys.a) yIn -= 1.0;
+    if (keys.d) yIn += 1.0;
 
+    // รวม Input จากเมาส์บน Desktop
+    pIn += mousePitch;
+    yIn += mouseYaw;
+    mousePitch = 0;
+    mouseYaw = 0;
+
+    const boost = S.isBoosting || keys.space;
+
+    // ส่งค่าเข้า Engine ฟิสิกส์ 3D
+    spaceEnv.setSteerInput(pIn, yIn, boost);
+
+    // ตรวจสอบการบินผ่านวงแหวนนำร่องสู่ดวงจันทร์
     if (S.playing) {
       spaceEnv.checkNavRingPassed(ring => {
         sock.emit('nav_waypoint', { ringId: ring.id });
       });
     }
 
+    // ขยับกล้อง 3D Chase Camera ตามตัวยาน
     spaceEnv.updateFlightCamera(camera, dt);
 
+    // ส่ง Quaternion และพิกัด 3D Sync ไปยังเพื่อนในห้อง
     if (S.playing && (nowReal - S.lastNavEmit > 50)) {
       S.lastNavEmit = nowReal;
       sock.emit('ship_nav', spaceEnv.getNavState());
     }
   } else {
+    // ผู้เล่น Ground Crew อยู่ที่หอดูดาวภาคพื้นดิน
     look.update(dt);
     camera.position.set(
       Math.sin(look.yaw) * CFG.camera.eye.z, CFG.camera.eye.y,
