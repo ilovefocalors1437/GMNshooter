@@ -723,13 +723,8 @@ def _fill(events, n):
 
 
 def _storm_hp(mag):
-    """ก้อนสว่าง = ใหญ่ = ทนกว่า — จำนวนนัดมาจาก mag จริง ไม่ได้สุ่ม"""
-    if mag is None:
-        return 3
-    for threshold, hp in C.STORM_HP_BY_MAG:
-        if mag <= threshold:
-            return hp
-    return 2
+    """ก้อนสว่าง = ยิงแตกทันที 1 นัดทุกดวง เพื่อความสะใจและคมชัด"""
+    return 1
 
 
 def _clamp01(v):

@@ -896,22 +896,35 @@ class Tracers {
 }
 const tracers = new Tracers(scene);
 
-// ══ เล็ง + ยิง (Crosshair Center Ray + Screen NDC Proximity) ════
+// ══ เล็ง + ยิง (Ray-Sphere Intersection + Screen Proximity) ════
 const _vCamDir = new THREE.Vector3();
 const _toMeteor = new THREE.Vector3();
+const _tmpMeteorPos = new THREE.Vector3();
+const _closestPoint = new THREE.Vector3();
 const _vProjAim = new THREE.Vector3();
 const _a = {};
 
 function pickTarget() {
   let best = null, bestScore = Infinity;
+  const t = serverNow();
+  camera.updateMatrixWorld(true);
   const camPos = camera.position;
-  camera.getWorldDirection(_vCamDir);
+
+  if (S.role === 'ground') {
+    dirFrom(look.yaw, look.pitch, _vCamDir);
+  } else {
+    camera.getWorldDirection(_vCamDir);
+  }
 
   for (const m of field.active) {
     if (!m.alive || S.destroyed.has(m.id)) continue;
+    if (t >= m.tBurn + 100) continue; // ข้ามดวงที่ไหม้ดับไปแล้ว
+
+    // ตำแหน่งอุกกาบาต ณ เวลาจริงเป๊ะๆ
+    getPosition(m, t, _tmpMeteorPos);
 
     // 1. Ray angle in 3D
-    _toMeteor.subVectors(m.position, camPos);
+    _toMeteor.subVectors(_tmpMeteorPos, camPos);
     const dist = _toMeteor.length();
     if (dist < 0.5) continue;
     _toMeteor.divideScalar(dist);
@@ -919,14 +932,19 @@ function pickTarget() {
     const dot = clamp(_vCamDir.dot(_toMeteor), -1, 1);
     const angDeg = Math.acos(dot) * (180 / Math.PI);
 
-    // 2. Projected Screen distance from crosshair center (0,0)
-    _vProjAim.copy(m.position).project(camera);
+    // 2. Ray-Sphere Distance (ระยะห่างจากลำกล้องไปยังกึ่งกลางก้อนอุกกาบาต)
+    _closestPoint.copy(camPos).addScaledVector(_vCamDir, dist * dot);
+    const rayDist = _closestPoint.distanceTo(_tmpMeteorPos);
+    const hitSphereRadius = Math.max(18, (m.radius || 4) * 4.2);
+
+    // 3. Projected Screen distance from crosshair center (0,0)
+    _vProjAim.copy(_tmpMeteorPos).project(camera);
     const isFront = _vProjAim.z < 1.0;
     const screenDist = isFront ? Math.hypot(_vProjAim.x, _vProjAim.y) : 999;
 
-    // Hit condition: within 22 degrees in 3D OR within 0.35 in screen space
-    if (isFront && (angDeg <= 22.0 || screenDist <= 0.35)) {
-      const score = Math.min(angDeg / 22.0, screenDist / 0.35);
+    // Hit condition: กรวย 24 องศา หรือ รัศมี Ray-Sphere หรือ หน้าจอ Crosshair
+    if (isFront && (angDeg <= 24.0 || rayDist <= hitSphereRadius || screenDist <= 0.38)) {
+      const score = Math.min(angDeg / 24.0, rayDist / hitSphereRadius, screenDist / 0.38);
       if (score < bestScore) {
         bestScore = score;
         best = m;
@@ -1169,7 +1187,7 @@ function frame(nowReal) {
     for (const w of S.schedule) {
       if (S.spawned.has(w.id)) continue;
       const abs = S.startMs + w.t0;
-      if (t < abs) break;
+      if (t < abs) continue;
       S.spawned.add(w.id);
       if (S.destroyed.has(w.id)) continue;
       field.spawnFromWire({ ...w, t0: abs });
