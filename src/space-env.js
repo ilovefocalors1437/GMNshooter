@@ -1,9 +1,9 @@
 // space-env.js — Thailand CE-7 Moonshot True 3D Flight & Atmosphere Simulation Engine
 //
-// 1. Distant Moon ((-280, 520, -1100) — ~60s Flight Duration to Moon South Pole)
+// 1. Distant Moon ((-280, 520, -1100) — Flight Duration to Moon South Pole)
 // 2. 18 Scattered 3D Waypoint Rings (Non-linear, challenging 3D spatial layout)
 // 3. Atmospheric Cloud Layers (Dense clouds at 0-40km -> Clear deep space at >80km)
-// 4. Full 3D Flight Physics (Pitch, Yaw, Roll, Constant Speed, No Boost)
+// 4. Full 3D Flight Physics (Pitch, Yaw, Roll, Afterburners Thruster Boost 5s/7s CD)
 // 5. 3 Distinct Endings Animations:
 //    - 💥 Ship Explosion (Debris burst & fiery shockwave on HP <= 0)
 //    - 🚀 Lunar South Pole Orbit (Smooth orbital insertion with CE-7 MATCH)
@@ -40,6 +40,7 @@ export class SpaceEnvironment {
     this.rocketAltKm = 24.0;
     this.distToMoonKm = 384400.0;
     this.flightSpeedKmS = 11.2;
+    this.isBoosting = false;
 
     // ── 3D Flight Dynamics & Physics ──
     this.startPos = new THREE.Vector3(70, 15, -260);
@@ -68,6 +69,7 @@ export class SpaceEnvironment {
     // กล้อง Chase Cam 3D
     this.camPos = new THREE.Vector3(70, 22, -230);
     this.camLookTarget = new THREE.Vector3(70, 15, -260);
+    this.baseFov = CFG.camera.fov;
 
     this._init();
   }
@@ -128,9 +130,8 @@ export class SpaceEnvironment {
     const count = 35;
     for (let i = 0; i < count; i++) {
       const mesh = new THREE.Mesh(cloudGeo, cloudMat.clone());
-      const u = i / count;
       const x = (Math.random() - 0.5) * 350;
-      const y = 8 + Math.random() * 55; // ความสูง 8 ถึง 63
+      const y = 8 + Math.random() * 55;
       const z = -100 - Math.random() * 400;
       mesh.position.set(x, y, z);
       mesh.scale.set(
@@ -242,6 +243,13 @@ export class SpaceEnvironment {
       const dish = new THREE.Mesh(dishGeo, dishMat);
       dishHead.add(dish);
 
+      const sensor = new THREE.Mesh(
+        new THREE.SphereGeometry(0.25, 8, 8),
+        new THREE.MeshBasicMaterial({ color: 0x59c0ff })
+      );
+      sensor.position.set(0, 0.8, -0.6);
+      dishHead.add(sensor);
+
       dGroup.add(dishHead);
       this.dishesGroup.add(dGroup);
       this.dishes.push(dishHead);
@@ -289,7 +297,6 @@ export class SpaceEnvironment {
     const start = this.startPos.clone().add(new THREE.Vector3(-10, 25, -30));
     const end = this.moonTargetPos.clone().add(new THREE.Vector3(10, -20, 40));
 
-    // Seeded random offsets สำหรับจัดวางตำแหน่งวงแหวน
     const offsets = [
       { x: -18, y: 12 }, { x: 22, y: -8 }, { x: -28, y: 18 }, { x: 30, y: 10 },
       { x: -14, y: -15 }, { x: 35, y: 22 }, { x: -32, y: -8 }, { x: 18, y: 28 },
@@ -332,6 +339,7 @@ export class SpaceEnvironment {
     this.passedRings.clear();
     this.isDestroyed = false;
     this.hasReachedMoon = false;
+    this.isBoosting = false;
     this.flightPos.copy(this.startPos);
     this.pitchAngle = 0.42;
     this.yawAngle = -2.62;
@@ -370,7 +378,6 @@ export class SpaceEnvironment {
     }
   }
 
-  // ค้นหา Waypoint วงถัดไปที่ยังไม่ได้เก็บ
   getNextActiveRing() {
     for (const r of this.navRings) {
       if (r.active && !this.passedRings.has(r.id)) {
@@ -380,10 +387,11 @@ export class SpaceEnvironment {
     return null;
   }
 
-  // ══ 7. การควบคุมการบิน 3D (Pitch, Yaw, Roll — ไม่ใช้ Boost) ══
-  setSteerInput(pitchIn, yawIn) {
+  // ══ 7. การควบคุมการบิน 3D (Pitch, Yaw, Boost) ═══════════════
+  setSteerInput(pitchIn, yawIn, boost = false) {
     this.pitchRate = clamp(pitchIn, -1, 1);
     this.yawRate = clamp(yawIn, -1, 1);
+    this.isBoosting = !!boost;
   }
 
   // ══ 8. ระเบิดยานกลางอากาศ (Cutscene 6.1) ════════════════════
@@ -392,7 +400,6 @@ export class SpaceEnvironment {
     this.isDestroyed = true;
     if (this.rocket) this.rocket.visible = false;
 
-    // สร้างลูกไฟและเศษซากระเบิด
     const pCount = 45;
     const pGeo = new THREE.DodecahedronGeometry(1.8);
     for (let i = 0; i < pCount; i++) {
@@ -421,13 +428,11 @@ export class SpaceEnvironment {
       this.moonMesh.rotation.y += dt * 0.03;
     }
 
-    // หมุนจานเรดาร์ภาคพื้น
     for (let i = 0; i < this.dishes.length; i++) {
       const d = this.dishes[i];
       d.rotation.y = Math.sin(elapsedSec * (0.2 + i * 0.08)) * 0.45;
     }
 
-    // แอนิเมชันวงแหวน
     for (const r of this.navRings) {
       if (r.active) {
         r.mesh.rotation.z += dt * 0.7;
@@ -439,7 +444,6 @@ export class SpaceEnvironment {
       }
     }
 
-    // อัปเดตเศษซากระเบิด (กรณีถูกทำลาย)
     if (this.isDestroyed) {
       for (const p of this.explosionGroup.children) {
         p.position.addScaledVector(p.userData.vel, dt);
@@ -449,7 +453,6 @@ export class SpaceEnvironment {
       return;
     }
 
-    // ปรับความโปร่งใสของก้อนเมฆตามความสูง
     const curY = this.flightPos.y;
     const cloudOpacity = clamp(1.0 - (curY - 15) / 60, 0.0, 0.45);
     for (const c of this.cloudParticles) {
@@ -461,7 +464,6 @@ export class SpaceEnvironment {
       const t = Math.max(0, elapsedSec);
 
       if (this.hasReachedMoon) {
-        // ── VICTORY ORBITAL CUTSCENE (6.3) ──
         this.orbitAngle += dt * 0.65;
         const orbitR = 48.0;
         const ox = this.moonTargetPos.x + Math.cos(this.orbitAngle) * orbitR;
@@ -487,17 +489,17 @@ export class SpaceEnvironment {
         this.pitchAngle += this.pitchRate * (turnSpeed * 0.85) * dt;
         this.pitchAngle = clamp(this.pitchAngle, -0.40, 1.35);
 
-        // เอียงปีกยาน (Bank Roll)
         const targetRoll = -this.yawRate * 0.55;
         this.rollAngle = THREE.MathUtils.damp(this.rollAngle, targetRoll, 5.0, dt);
 
         this.flightEuler.set(this.pitchAngle, this.yawAngle, this.rollAngle, 'YXZ');
         this.rocket.quaternion.setFromEuler(this.flightEuler);
 
-        // เคลื่อนที่ไปข้างหน้าด้วยความเร็วคงที่ (~17.5 m/s)
+        // เคลื่อนที่ไปข้างหน้า (Normal vs Boost Speed)
         const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(this.rocket.quaternion);
-        const flightSpeed = 17.8;
-        this.flightSpeedKmS = 11.2;
+        const baseSpeed = 17.8;
+        const flightSpeed = this.isBoosting ? baseSpeed * 1.9 : baseSpeed;
+        this.flightSpeedKmS = this.isBoosting ? 21.5 : 11.2;
 
         this.flightPos.addScaledVector(forward, flightSpeed * dt);
 
@@ -512,14 +514,17 @@ export class SpaceEnvironment {
         const distToMoon = this.flightPos.distanceTo(this.moonTargetPos);
         this.distToMoonKm = Math.max(3800.0, (distToMoon / 1100.0) * 384400.0);
 
-        // ตรวจสอบการถึงดวงจันทร์
         if (distToMoon <= 55.0) {
           this.hasReachedMoon = true;
         }
 
         if (this.rocketFlame) {
-          const s = 1.0 + Math.sin(t * 30) * 0.15;
-          this.rocketFlame.scale.set(s, s * 1.5, s);
+          const boostScale = this.isBoosting ? 2.4 : 1.0;
+          const s = (1.0 + Math.sin(t * 35) * 0.18) * boostScale;
+          this.rocketFlame.scale.set(s, s * 1.6, s);
+        }
+        if (this.rocketLight) {
+          this.rocketLight.intensity = this.isBoosting ? 8.0 : 4.0;
         }
       } else {
         // ── สำหรับ Ground Crew (มองเห็นยานไต่ระดับสู่อวกาศ) ──
@@ -552,7 +557,6 @@ export class SpaceEnvironment {
     if (!this.rocket) return;
 
     if (this.hasReachedMoon) {
-      // กล้องหมุนมองเห็นทั้งยานและดวงจันทร์ในระยะประชิด
       const camTarget = this.moonTargetPos.clone().add(new THREE.Vector3(0, 35, 110));
       camera.position.lerp(camTarget, dt * 2.5);
       camera.lookAt(this.moonTargetPos);
@@ -562,9 +566,12 @@ export class SpaceEnvironment {
     const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(this.rocket.quaternion);
     const up = new THREE.Vector3(0, 1, 0).applyQuaternion(this.rocket.quaternion);
 
+    const distBack = this.isBoosting ? 36.0 : 30.0;
+    const distUp = this.isBoosting ? 9.5 : 8.5;
+
     const targetCamPos = this.rocket.position.clone()
-      .sub(forward.clone().multiplyScalar(30.0))
-      .add(up.clone().multiplyScalar(8.5));
+      .sub(forward.clone().multiplyScalar(distBack))
+      .add(up.clone().multiplyScalar(distUp));
 
     this.camPos.lerp(targetCamPos, dt * 7.0);
     camera.position.copy(this.camPos);
@@ -572,6 +579,10 @@ export class SpaceEnvironment {
     const targetLook = this.rocket.position.clone().add(forward.clone().multiplyScalar(50.0));
     this.camLookTarget.lerp(targetLook, dt * 8.0);
     camera.lookAt(this.camLookTarget);
+
+    const targetFov = this.isBoosting ? this.baseFov + 12 : this.baseFov;
+    camera.fov = THREE.MathUtils.damp(camera.fov, targetFov, 4, dt);
+    camera.updateProjectionMatrix();
   }
 
   getNavState() {
@@ -586,6 +597,7 @@ export class SpaceEnvironment {
       qw: +this.rocket.quaternion.w.toFixed(3),
       distKm: +this.distToMoonKm.toFixed(0),
       speed: +this.flightSpeedKmS.toFixed(1),
+      boost: this.isBoosting,
       reachedMoon: this.hasReachedMoon,
       destroyed: this.isDestroyed,
     };
@@ -599,6 +611,7 @@ export class SpaceEnvironment {
     }
     if (d.distKm !== undefined) this.distToMoonKm = d.distKm;
     if (d.speed !== undefined) this.flightSpeedKmS = d.speed;
+    this.isBoosting = !!d.boost;
     if (d.reachedMoon) this.hasReachedMoon = true;
     if (d.destroyed) this.triggerShipExplosion();
   }

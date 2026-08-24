@@ -1,7 +1,7 @@
 // audio.js — ระบบสังเคราะห์เสียง WebAudio API 3D Space & Ground Defense SFX
 //
 // 1. เสียงป้อมปืนภาคพื้น: shoot(), hit(combo), burnout(), whistle()
-// 2. เสียงยานอวกาศ: startEngine(), stopEngine(), updateEngine(speed, turn), laserBlast()
+// 2. เสียงยานอวกาศ: startEngine(), stopEngine(), updateEngine(turn), boost(), laserBlast()
 // 3. เสียงเหตุการณ์: radioBeep(), navRing(), shipExplosion(), victoryFanfare(), gameOver()
 
 import { CFG, clamp } from './config.js';
@@ -126,7 +126,7 @@ export class Sfx {
     this._noise({ dur, gain: CFG.audio.whistleVolume * 0.45, type: 'bandpass', f0: 2600, f1: 800, q: 8, pan });
   }
 
-  // ══ 2. เครื่องยนต์ยานอวกาศ (Engine Loop) ═════════════════════
+  // ══ 2. เครื่องยนต์ยานอวกาศ (Engine Loop) & Boost ═══════════════
   startEngine() {
     if (!this.ready || this.engineRunning) return;
     try {
@@ -177,6 +177,13 @@ export class Sfx {
     this.engineOsc1.frequency.setTargetAtTime(f, t, 0.08);
     this.engineOsc2.frequency.setTargetAtTime(f * 2, t, 0.08);
     this.engineFilter.frequency.setTargetAtTime(filterF, t, 0.08);
+  }
+
+  boost() {
+    if (!this.ready) return;
+    this._noise({ dur: 1.2, gain: 0.65, type: 'lowpass', f0: 520, f1: 90, q: 1.5 });
+    this._tone({ dur: 1.0, gain: 0.50, type: 'sawtooth', f0: 160, f1: 55 });
+    this._noise({ dur: 0.8, gain: 0.35, type: 'bandpass', f0: 1800, f1: 300, q: 3 });
   }
 
   stopEngine() {

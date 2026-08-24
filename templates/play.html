@@ -160,7 +160,7 @@
   }
   .story-comms-status {
     font-size: calc(2.6 * var(--u)); color: var(--good); display: flex; align-items: center;
-    gap: calc(1 * var(--u)); font-weight: 700;
+    gap: calc(1 * var(--u)); font-weight: 700; letter-spacing: 0.08em;
   }
   .pulse-dot {
     width: calc(2 * var(--u)); height: calc(2 * var(--u)); border-radius: 50%; background: var(--good);
@@ -243,6 +243,7 @@
   body.is-pilot #cards { display: none !important; }
   body.is-pilot #flight-controls-hint { display: block; }
   body.is-pilot #flight-stick-zone { display: flex; }
+  body.is-pilot #btn-boost { display: flex; }
   body.is-pilot #waypoint-markers-layer { display: block; }
 
   .pnd-title {
@@ -308,10 +309,32 @@
     padding: calc(1 * var(--u)) calc(2.4 * var(--u)); border-radius: calc(1.6 * var(--u));
   }
 
+  /* ── Boost Button (5s Duration / 7s Cooldown) ── */
+  #btn-boost {
+    position: absolute; right: calc(44 * var(--u)); bottom: 6vh;
+    padding: calc(2.2 * var(--u)) calc(3.6 * var(--u));
+    border-radius: calc(3 * var(--u)); border: calc(.5 * var(--u)) solid var(--gold);
+    background: rgba(40, 30, 8, 0.88); color: var(--gold);
+    font-size: calc(3.2 * var(--u)); font-weight: 700; letter-spacing: .06em;
+    pointer-events: auto; display: none; cursor: pointer;
+    box-shadow: 0 0 calc(3 * var(--u)) rgba(255, 224, 102, 0.4);
+    transition: all 0.15s ease-out;
+  }
+  #btn-boost.active {
+    background: var(--gold); color: #06121c;
+    box-shadow: 0 0 calc(5 * var(--u)) var(--gold);
+    transform: scale(1.05);
+  }
+  #btn-boost:disabled {
+    opacity: 0.5; border-color: rgba(255, 255, 255, 0.3);
+    color: rgba(255, 255, 255, 0.6); background: rgba(20, 20, 20, 0.8);
+    box-shadow: none; cursor: not-allowed;
+  }
+
   /* ── Pulse Shield Button (For Pilot) ── */
   #pulse-shield-btn {
     position:absolute; right:calc(24 * var(--u)); bottom:6vh;
-    padding:calc(2.4 * var(--u)) calc(3.6 * var(--u));
+    padding:calc(2.2 * var(--u)) calc(3.6 * var(--u));
     border-radius:calc(3 * var(--u)); border:calc(.5 * var(--u)) solid #8fffa8;
     background:rgba(8, 30, 20, 0.85); color:#8fffa8;
     font-size:calc(3.2 * var(--u)); font-weight:700; letter-spacing:.06em;
@@ -588,7 +611,7 @@
 
     <div class="story-actions">
       <div class="story-comms-status">
-        <span class="pulse-dot"></span> 🔊 <span id="tts-status">วิทยุศูนย์บัญชาการ NARIT (Thai Voice)</span>
+        <span class="pulse-dot"></span> 📡 <span>NARIT MISSION CONTROL DATASTREAM</span>
       </div>
 
       <div class="story-btn-group">
@@ -670,12 +693,15 @@
 
   <div id="cross"><div class="ring"></div><div class="d"></div></div>
   <div id="mousehint">คลิกเพื่อล็อกเมาส์แล้วเล็งได้เลย · คลิก = ยิง · Esc = ปลดล็อก</div>
-  <div id="flight-controls-hint">🎮 บังคับยาน: [W/A/S/D หรือ Mouse/Joystick] เลี้ยว/เชิดหัว 3 มิติ</div>
+  <div id="flight-controls-hint">🎮 บังคับยาน: [W/A/S/D หรือ Mouse/Joystick] เลี้ยว/เชิดหัว · [SPACE / SHIFT] ⚡ BOOST (5s)</div>
 
   <!-- Virtual Flight Joystick for Pilot -->
   <div id="flight-stick-zone">
     <div id="flight-stick-thumb"></div>
   </div>
+
+  <!-- Pilot Boost Button (5s Duration / 7s Cooldown) -->
+  <button type="button" id="btn-boost">⚡ BOOST (5s)</button>
 
   <!-- Pilot Skill: Pulse Shield -->
   <button type="button" id="pulse-shield-btn">🛡️ PULSE</button>

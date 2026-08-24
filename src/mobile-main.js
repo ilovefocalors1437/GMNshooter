@@ -1,13 +1,13 @@
-// mobile-main.js — Thailand CE-7 Moonshot x GMNshooter (3D Space Flight, SFX & 3 Endings)
+// mobile-main.js — Thailand CE-7 Moonshot x GMNshooter (3D Space Flight, Boost 5s/7s CD & 3 Endings)
 //
-// 1. True 3D Flight Physics (Continuous Constant Speed, No Boost, WASD+Mouse on PC, 360° Joystick on Mobile)
-// 2. WebAudio Sound Engine: Engine Hum Loop, Laser Blast, Hit Synth, Ship Explosion & Victory Fanfare
+// 1. True 3D Flight Physics (Afterburners Boost 5s Duration / 7s Cooldown, WASD+Mouse on PC, 360° Joystick on Mobile)
+// 2. WebAudio Sound Engine: Engine Hum Loop, Thruster Boost, Laser Blast, Hit Synth, Ship Explosion & Victory Fanfare
 // 3. 3D Waypoint HUD Markers (Projected Square Markers [ ◻ ] with distance text km to Next Ring & Moon)
 // 4. 3 Distinct Mission Endings:
 //    - 💥 Cutscene 6.1 (HP <= 0): Spaceship Explodes, Red Screen, Disqualified
 //    - ⚠️ Cutscene 6.2 (Timeout): Incomplete Trajectory, -30% Penalty
 //    - 🚀 Cutscene 6.3 (Lunar Orbit): Orbit South Pole, Fanfare, +30% Bonus
-// 5. 4-Act Cinematic Black Screen Opening with Thai Male Voice TTS
+// 5. 4-Act Cinematic Black Screen Opening (Clean Sci-Fi Typography)
 
 import * as THREE from 'three';
 import { CFG, DEG, clamp, damp } from './config.js';
@@ -35,48 +35,6 @@ function pane(id) {
   $('hud').classList.toggle('on', id === null);
 }
 
-// ══ ระบบเสียงบรรยายภาษาไทย (Thai Male TTS) ═════════════════
-function playThaiMaleTTS(text) {
-  if (!('speechSynthesis' in window)) return;
-  try {
-    window.speechSynthesis.cancel();
-    const u = new SpeechSynthesisUtterance(text);
-    u.lang = 'th-TH';
-    u.rate = 1.04;
-    u.pitch = 0.82;
-
-    const voices = window.speechSynthesis.getVoices();
-    const thVoice = voices.find(v => (v.lang === 'th-TH' || v.lang === 'th' || v.lang.startsWith('th')) &&
-      (v.name.toLowerCase().includes('male') || v.name.includes('ชาย') || v.name.includes('Niwat') || v.name.includes('Pattara') || v.name.includes('Krittipat') || v.name.includes('Wichai')));
-
-    if (thVoice) {
-      u.voice = thVoice;
-    } else {
-      const anyTh = voices.find(v => v.lang === 'th-TH' || v.lang === 'th' || v.lang.startsWith('th'));
-      if (anyTh) u.voice = anyTh;
-    }
-
-    u.onstart = () => {
-      const st = $('tts-status');
-      if (st) st.textContent = 'วิทยุศูนย์บัญชาการ: กำลังถ่ายทอดคำสั่ง...';
-    };
-    u.onend = () => {
-      const st = $('tts-status');
-      if (st) st.textContent = 'วิทยุศูนย์บัญชาการ: พร้อมปฏิบัติการ';
-    };
-
-    window.speechSynthesis.speak(u);
-  } catch (e) {
-    console.warn('[tts] speak error:', e);
-  }
-}
-
-if ('speechSynthesis' in window) {
-  window.speechSynthesis.onvoiceschanged = () => {
-    window.speechSynthesis.getVoices();
-  };
-}
-
 // ══ 4-Act Cinematic Story Timeline Lore ════════════════════
 const STORY_ACTS = [
   {
@@ -87,7 +45,6 @@ const STORY_ACTS = [
            <b>สถาบันวิจัยดาราศาสตร์แห่งชาติ (NARIT)</b> ร่วมกับนักวิทยาศาสตร์ไทย<br>
            ได้พัฒนาอุปกรณ์สัญชาติไทย <span class='hl-gold'>“CE-7 MATCH”</span> สำเร็จ<br>
            เพื่อออกเดินทางสู่ขั้วใต้ของดวงจันทร์ ไปพร้อมกับภารกิจระดับโลก <b>Chang'e-7</b>`,
-    speech: "ศูนย์บัญชาการปฏิบัติการอวกาศ NARIT... นี่คือก้าวสำคัญทางประวัติศาสตร์ของประเทศไทย อุปกรณ์สำรวจดวงจันทร์ CE-7 MATCH พร้อมแล้วสำหรับการเดินทางสู่ขั้วใต้ของดวงจันทร์",
   },
   {
     act: 2,
@@ -96,7 +53,6 @@ const STORY_ACTS = [
     body: `จรวดขนส่งยักษ์ <b>Long March 5</b> กำลังนำส่งยานและอุปกรณ์ไทยข้ามผ่านชั้นบรรยากาศโลก<br><br>
            แต่ในระดับความสูง <b>80–100 กิโลเมตร</b> ระบบเรดาร์ตรวจพบกลุ่มสะเก็ดดาวจริงจากเครือข่าย <span class='hl'>Global Meteor Network (GMN)</span><br>
            พุ่งเข้าปะทะแนววิถีบินด้วยความเร็วสูงถึง <span class='hl-red'>72 กิโลเมตรต่อวินาที!</span>`,
-    speech: "จรวด Long March 5 กำลังไต่ระดับความสูง... ตรวจพบกลุ่มฝนดาวตกความเร็วสูง กำลังพุ่งตัดแนววิถีบินของยาน หากเกราะพลังงานถูกทำลาย ภารกิจสู่ดวงจันทร์จะล้มเหลวทันที!",
   },
   {
     act: 3,
@@ -114,7 +70,6 @@ const STORY_ACTS = [
                <p>บังคับเลี้ยวทิศทางยาน บินลอดวงแหวนนำร่องสู่ดวงจันทร์ และเปิดเกราะสะท้อน</p>
              </div>
            </div>`,
-    speech: "ขอให้ทีมภาคพื้นดิน ประจำสถานีเลเซอร์ ยิงสกัดกั้นสะเก็ดดาวทันที! และผู้ควบคุมยาน บังคับทิศทางยานตามเส้นทางนำร่องสู่ดวงจันทร์ให้ปลอดภัย!",
   },
   {
     act: 4,
@@ -123,14 +78,13 @@ const STORY_ACTS = [
     body: `ชะตากรรมของอุปกรณ์ไทย <b>CE-7 MATCH</b> และการเดินทางสู่ดวงจันทร์...<br>
            ขึ้นอยู่กับความร่วมมือของพวกเราทุกคน!<br><br>
            <div class='launch-cd'>3 ... 2 ... 1 ... <b>LAUNCH!</b></div>`,
-    speech: "ทุกหน่วยเข้าประจำตำแหน่ง... เริ่มต้นภารกิจ ณ บัดนี้!",
   }
 ];
 
 let currentStoryAct = 0;
 let storyTimer = null;
 
-function renderStoryAct(idx, playVoice = true) {
+function renderStoryAct(idx) {
   currentStoryAct = clamp(idx, 0, STORY_ACTS.length - 1);
   const act = STORY_ACTS[currentStoryAct];
   $('story-badge').innerHTML = act.badge;
@@ -146,15 +100,12 @@ function renderStoryAct(idx, playVoice = true) {
   $('story-next').textContent = currentStoryAct === STORY_ACTS.length - 1 ? 'พร้อมลุย 🚀' : 'ถัดไป ➡️';
 
   sfx.radioBeep();
-  if (playVoice) {
-    playThaiMaleTTS(act.speech);
-  }
 }
 
 function startCinematicStory() {
   currentStoryAct = 0;
   pane('p-story');
-  renderStoryAct(0, true);
+  renderStoryAct(0);
 
   if (storyTimer) clearInterval(storyTimer);
   storyTimer = setInterval(() => {
@@ -163,7 +114,7 @@ function startCinematicStory() {
       return;
     }
     if (currentStoryAct < STORY_ACTS.length - 1) {
-      renderStoryAct(currentStoryAct + 1, true);
+      renderStoryAct(currentStoryAct + 1);
     } else {
       clearInterval(storyTimer);
     }
@@ -196,6 +147,23 @@ const S = {
   hasReachedMoon: false,
 };
 const serverNow = () => performance.now() + S.offset;
+
+// ══ Boost System (5s Duration / 7s Cooldown) ═══════════════
+const BOOST_DUR_MS = 5000;
+const BOOST_CD_MS = 7000;
+let boostActive = false;
+let boostStartMs = -1e9;
+let boostCdUntilMs = -1e9;
+
+function triggerBoost() {
+  const now = performance.now();
+  if (now < boostCdUntilMs || boostActive || !S.playing || spaceEnv.isDestroyed || S.role !== 'spaceship') return;
+  boostActive = true;
+  boostStartMs = now;
+  boostCdUntilMs = now + BOOST_DUR_MS + BOOST_CD_MS;
+  sfx.boost();
+  floatText.add(new THREE.Vector3(0, 2.0, -4), '⚡ AFTERBURNERS ACTIVE! (5s)');
+}
 
 // ══ Socket ════════════════════════════════════════════════
 const sock = window.io({ transports: ['websocket', 'polling'] });
@@ -307,6 +275,9 @@ function updateRoleUi() {
   const pulseBtn = $('pulse-shield-btn');
   if (pulseBtn) pulseBtn.style.display = isShip ? 'flex' : 'none';
 
+  const boostBtn = $('btn-boost');
+  if (boostBtn) boostBtn.style.display = isShip ? 'flex' : 'none';
+
   if (rig && rig.root) rig.root.visible = !isShip;
 }
 
@@ -404,7 +375,6 @@ sock.on('ship_damage', d => {
   juice.shake(1.1);
 
   if (S.shipHp <= 0) {
-    // Cutscene 6.1: ยานถูกทำลาย
     spaceEnv.triggerShipExplosion();
     sfx.shipExplosion();
     showEndingBanner('💥 ภารกิจล้มเหลว!', 'ยาน Long March 5 ถูกสะเก็ดดาวทำลายกลางอากาศ (DISQUALIFIED)', '#ff4d6d');
@@ -430,13 +400,16 @@ function showEndingBanner(title, sub, color) {
   }
 }
 
-// ══ เริ่มรอบ: แสดง 4-Act Cinematic Story + เสียงพากย์ TTS ══════
+// ══ เริ่มรอบ: แสดง 4-Act Cinematic Story ═════════════════════
 sock.on('round_start', d => {
   S.stormStartSec = d.stormStartSec; S.stormPassRate = d.stormPassRate;
   S.stormMinScale = d.stormMinScale; S.phase = 'normal';
   S.stormHits = 0; S.stormTotal = 0;
   S.shipHp = d.shipHp || 200; S.shipMaxHp = d.shipMaxHp || 200;
   S.hasReachedMoon = false;
+  boostActive = false;
+  boostStartMs = -1e9;
+  boostCdUntilMs = -1e9;
   document.body.classList.remove('storm');
   $('stormbar').style.display = 'none';
   contactLog.setStormMode(false);
@@ -485,7 +458,6 @@ sock.on('tick', d => {
   paintHud(d.timeLeftMs);
 });
 
-// นัดที่ยังไม่ครบ
 sock.on('damaged', d => {
   const m = field.byId(d.meteorId);
   if (!m) return;
@@ -683,19 +655,19 @@ $('role-ground').onclick = () => { sock.emit('select_role', { role: 'ground' });
 $('role-spaceship').onclick = () => { sock.emit('select_role', { role: 'spaceship' }); };
 
 $('story-prev').onclick = () => {
-  if (currentStoryAct > 0) renderStoryAct(currentStoryAct - 1, true);
+  if (currentStoryAct > 0) renderStoryAct(currentStoryAct - 1);
 };
 $('story-next').onclick = () => {
   if (currentStoryAct < STORY_ACTS.length - 1) {
-    renderStoryAct(currentStoryAct + 1, true);
+    renderStoryAct(currentStoryAct + 1);
   } else {
     $('skip-story').click();
   }
 };
 $('skip-story').onclick = () => {
   if (storyTimer) clearInterval(storyTimer);
-  if (window.speechSynthesis) window.speechSynthesis.cancel();
   pane(null);
+  if (S.role === 'spaceship') sfx.startEngine();
 };
 
 // สกิล Pulse Shield ของคนคุมยาน
@@ -707,6 +679,11 @@ $('pulse-shield-btn').onclick = () => {
   }
   S.lastShieldPulseAt = now;
   sock.emit('pulse_shield', {});
+};
+
+// ปุ่ม Boost ของคนคุมยาน
+$('btn-boost').onclick = () => {
+  triggerBoost();
 };
 
 // ══ Virtual 3D Flight Stick สำหรับคนคุมยาน ════════════════════
@@ -726,7 +703,7 @@ if (stickZone && stickThumb) {
     const ny = (Math.sin(ang) * clampedR) / maxR;
 
     S.yawInput = nx;
-    S.pitchInput = -ny; // ลากขึ้น = เชิดหัว / ลากลง = กดหัว
+    S.pitchInput = -ny;
 
     stickThumb.style.transform = `translate(${nx * maxR}px, ${ny * maxR}px)`;
   }
@@ -769,6 +746,7 @@ window.addEventListener('keydown', e => {
   if (k === 'd' || k === 'arrowright') keys.d = true;
   if (k === 'w' || k === 'arrowup') keys.w = true;
   if (k === 's' || k === 'arrowdown') keys.s = true;
+  if (k === ' ' || k === 'shift') triggerBoost();
 });
 window.addEventListener('keyup', e => {
   if (S.role !== 'spaceship') return;
@@ -1034,10 +1012,9 @@ function updateWaypointMarkers() {
   const r = spaceEnv.getNextActiveRing();
   let html = '';
 
-  // 1. Next Waypoint Ring Marker
   if (r) {
     _vProj.copy(r.pos).project(camera);
-    if (_vProj.z < 1.0) { // อยู่ด้านหน้ากล้อง
+    if (_vProj.z < 1.0) {
       const x = (_vProj.x * 0.5 + 0.5) * window.innerWidth;
       const y = (-(_vProj.y * 0.5) + 0.5) * window.innerHeight;
       const dist = Math.round(spaceEnv.flightPos.distanceTo(r.pos) * 12);
@@ -1048,7 +1025,6 @@ function updateWaypointMarkers() {
     }
   }
 
-  // 2. Moon Marker
   _vProj.copy(spaceEnv.moonTargetPos).project(camera);
   if (_vProj.z < 1.0) {
     const x = (_vProj.x * 0.5 + 0.5) * window.innerWidth;
@@ -1126,13 +1102,39 @@ function frame(nowReal) {
 
   const t = serverNow();
 
+  // Boost timer countdown logic
+  if (boostActive) {
+    if (nowReal - boostStartMs >= BOOST_DUR_MS) {
+      boostActive = false;
+    }
+  }
+
+  // Update Boost button UI
+  const bBtn = $('btn-boost');
+  if (bBtn && S.role === 'spaceship') {
+    if (boostActive) {
+      const leftSec = Math.max(0, (BOOST_DUR_MS - (nowReal - boostStartMs)) / 1000).toFixed(1);
+      bBtn.textContent = `⚡ BOOSTING (${leftSec}s)`;
+      bBtn.classList.add('active');
+      bBtn.disabled = false;
+    } else if (nowReal < boostCdUntilMs) {
+      const cdSec = Math.max(0, (boostCdUntilMs - nowReal) / 1000).toFixed(1);
+      bBtn.textContent = `⏳ RECHARGE (${cdSec}s)`;
+      bBtn.classList.remove('active');
+      bBtn.disabled = true;
+    } else {
+      bBtn.textContent = '⚡ BOOST (5s)';
+      bBtn.classList.remove('active');
+      bBtn.disabled = false;
+    }
+  }
+
   // Story Briefing / Countdown Transition
   if (S.playing && t < S.startMs) {
     const left = Math.max(1, Math.ceil((S.startMs - t) / 1000));
     $('countdown').textContent = left;
   } else if (S.playing && $('p-story').classList.contains('on')) {
     if (storyTimer) clearInterval(storyTimer);
-    if (window.speechSynthesis) window.speechSynthesis.cancel();
     pane(null);
     if (S.role === 'spaceship') sfx.startEngine();
   }
@@ -1164,7 +1166,7 @@ function frame(nowReal) {
     mousePitch = 0;
     mouseYaw = 0;
 
-    spaceEnv.setSteerInput(pIn, yIn);
+    spaceEnv.setSteerInput(pIn, yIn, boostActive);
     sfx.updateEngine(yIn);
 
     if (S.playing && !spaceEnv.isDestroyed) {
