@@ -562,6 +562,36 @@ def on_player_fire(data=None):
             }, to=room.code, include_self=False)
 
 
+@socketio.on("ship_nav")
+@safe
+def on_ship_nav(data=None):
+    """ผู้ควบคุมยานส่งการเคลื่อนที่/เลี้ยว/เร่งเครื่อง (Sync ไปยังสมาชิกในห้อง)"""
+    room = rooms.room_of_sid(request.sid)
+    if room and room.state in ("playing", "qte", "countdown"):
+        socketio.emit("ship_nav", data or {}, to=room.code, include_self=False)
+
+
+@socketio.on("nav_waypoint")
+@safe
+def on_nav_waypoint(data=None):
+    """ยานบินผ่านวงแหวนนำร่องสู่ดวงจันทร์ (Lunar Nav Ring) -> ได้แต้มโบนัส + ซ่อมเกราะ"""
+    room = rooms.room_of_sid(request.sid)
+    if room and room.state in ("playing", "qte"):
+        with room.lock:
+            bonus = 500
+            room.team_score += bonus
+            if room.ship_hp < room.ship_max_hp:
+                room.ship_hp = min(room.ship_max_hp, room.ship_hp + 5)
+            socketio.emit("nav_ring_passed", {
+                "ringId": (data or {}).get("ringId", 0),
+                "bonus": bonus,
+                "score": room.team_score,
+                "teamScore": room.team_score,
+                "shipHp": room.ship_hp,
+                "shipMaxHp": room.ship_max_hp,
+            }, to=room.code)
+
+
 @socketio.on("select_role")
 @safe
 def on_select_role(data=None):

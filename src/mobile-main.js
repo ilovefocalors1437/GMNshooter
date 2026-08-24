@@ -1,14 +1,13 @@
-// mobile-main.js — Thailand CE-7 Moonshot x GMNshooter (Story Briefing, Thai Male TTS & Team Co-op)
+// mobile-main.js — Thailand CE-7 Moonshot x GMNshooter (Pilot Flight Controls, Lunar Navigation & Team Co-op)
 //
-// 1. Story Briefing Screen & Thai Male Voice TTS:
-//    - เล่า Story ความเป็นมาของภารกิจ Thailand CE-7 Moonshot & Long March 5
-//    - ระบบ TTS เสียงผู้ชายไทยสังเคราะห์เป็นวิทยุศูนย์บัญชาการ
-// 2. ระบบเลือก Role ในห้อง Lobby:
-//    - 📡 GROUND CREW: พลเลเซอร์ภาคพื้นดิน ยิงสแกนสะเก็ดดาว
-//    - 🚀 FLIGHT OPS / PILOT: ผู้ควบคุมยาน Long March 5 (จำกัด 1 คน) พร้อมสกิล Shield Pulse (+15 HP) & Orbital Beam
+// 1. Dual Role Gameplay:
+//    - 🚀 FLIGHT OPS (PILOT): บังคับทิศทางยาน Long March 5 บินในอวกาศ (W/A/S/D / Flight Stick)
+//      ระบบนำร่องสู่ดวงจันทร์ (Distance to Moon KM / Lunar Waypoint Rings / Boost Thrusters / Pulse Shield)
+//    - 📡 GROUND CREW: พลเลเซอร์ภาคพื้นดิน ยิงสแกน/สกัดกั้นสะเก็ดดาว GMN คุ้มกันแนวบินยาน
+// 2. Story Briefing Screen & Thai Male Voice TTS
 // 3. ระบบคะแนนรวมของทั้งทีม (Team Score & Team Combo)
-// 4. ป้อมปืนและ Action การยิงของผู้เล่นทุกคนในทีม (Multi-Turret Sync)
-// 5. E-Certificate เกียรติยศระดับทีม "Thailand CE-7 Moonshot Flight & Ground Crew"
+// 4. Multi-Turret Sync & Real-time Spacecraft Flight Sync
+// 5. E-Certificate เกียรติยศระดับทีม
 
 import * as THREE from 'three';
 import { CFG, DEG, clamp, damp } from './config.js';
@@ -44,7 +43,7 @@ function playThaiMaleTTS(text) {
     const u = new SpeechSynthesisUtterance(text);
     u.lang = 'th-TH';
     u.rate = 1.04;
-    u.pitch = 0.82; // โทนเสียงทุ้มลึกจำลองนายทหารศูนย์บัญชาการอวกาศ
+    u.pitch = 0.82;
 
     const voices = window.speechSynthesis.getVoices();
     const thVoice = voices.find(v => (v.lang === 'th-TH' || v.lang === 'th' || v.lang.startsWith('th')) &&
@@ -92,10 +91,16 @@ const S = {
   offset: 0, bestRtt: Infinity,
   lastFireAt: -1e9,
   lastShieldPulseAt: -1e9,
+  lastNavEmit: 0,
   lastAimEmit: 0,
   spectator: SPECTATE,
   shipHp: 200, shipMaxHp: 200,
   qteOn: false, qteNeed: 0, qteHits: 0, qteEndMs: 0, qteMeteorId: 0,
+
+  // การบังคับยานของคนคุมยาน
+  pilotSteerX: 0,
+  pilotSteerY: 0,
+  pilotBoost: false,
 };
 const serverNow = () => performance.now() + S.offset;
 
@@ -172,8 +177,8 @@ const otherTurrets = new Map();
 
 function syncTeammateTurrets(players = []) {
   for (const p of players) {
-    if (p.slot === S.slot || !p.connected) {
-      if (!p.connected && otherTurrets.has(p.slot)) {
+    if (p.slot === S.slot || !p.connected || p.role === 'spaceship') {
+      if (otherTurrets.has(p.slot)) {
         const old = otherTurrets.get(p.slot);
         scene.remove(old.root);
         otherTurrets.delete(p.slot);
@@ -205,8 +210,14 @@ function updateRoleUi() {
   $('role-ground')?.classList.toggle('on', !isShip);
   $('role-spaceship')?.classList.toggle('on', isShip);
   document.body.classList.toggle('is-pilot', isShip);
+
   const pulseBtn = $('pulse-shield-btn');
   if (pulseBtn) pulseBtn.style.display = isShip ? 'flex' : 'none';
+
+  const boostBtn = $('btn-boost');
+  if (boostBtn) boostBtn.style.display = isShip ? 'flex' : 'none';
+
+  if (rig && rig.root) rig.root.visible = !isShip;
 }
 
 sock.on('room', st => {
@@ -262,6 +273,22 @@ sock.on('player_fire', d => {
   }
 });
 
+// รับการเคลื่อนที่/ทิศทางบินของยานจากคนคุมยาน (Flight Sync)
+sock.on('ship_nav', d => {
+  if (S.role !== 'spaceship') {
+    spaceEnv.applyRemoteNavState(d);
+  }
+});
+
+// รับ Event บินผ่านวงแหวนนำร่องสู่ดวงจันทร์ (Lunar Nav Waypoint)
+sock.on('nav_ring_passed', d => {
+  if (d.score !== undefined) S.score = d.score;
+  if (d.shipHp !== undefined) { S.shipHp = d.shipHp; S.shipMaxHp = d.shipMaxHp; paintShipHp(); }
+  sfx.navRing();
+  juice.shake(0.6);
+  floatText.add(new THREE.Vector3(0, 3.0, -8), `+${d.bonus || 500} LUNAR WAYPOINT BONUS! 🚀`);
+});
+
 // รับ Event Energy Pulse ฟื้นฟูเกราะ
 sock.on('shield_pulse', d => {
   S.shipHp = d.shipHp;
@@ -310,13 +337,13 @@ sock.on('round_start', d => {
   field.active.slice().forEach(m => field.kill(m));
   tracers.reset();
   juice.reset();
+  spaceEnv.resetNavRings();
   S.playing = true;
 
   pane('p-story');
   sfx.resume();
   sfx.radioBeep();
 
-  // เสียงวิทยุคำสั่งศูนย์บัญชาการภารกิจ
   const storySpeech = "ศูนย์บัญชาการแจ้งเตือน! ภารกิจ Thailand CE-7 Moonshot กำลังจะเริ่มต้นขึ้น จรวด Long March 5 กำลังนำส่งอุปกรณ์ไทย CE-7 MATCH สู่ดวงจันทร์ ขอให้ทีมภาคพื้นดินและผู้ควบคุมยาน ประจำตำแหน่งและเตรียมพร้อมยิงสกัดกั้นสะเก็ดดาวทันที!";
   playThaiMaleTTS(storySpeech);
 
@@ -543,6 +570,87 @@ $('pulse-shield-btn').onclick = () => {
   sock.emit('pulse_shield', {});
 };
 
+// ปุ่ม Boost ของคนคุมยาน
+const boostBtn = $('btn-boost');
+if (boostBtn) {
+  boostBtn.addEventListener('mousedown', () => { S.pilotBoost = true; sfx.boost(); });
+  window.addEventListener('mouseup', () => { S.pilotBoost = false; });
+  boostBtn.addEventListener('touchstart', e => { S.pilotBoost = true; sfx.boost(); e.preventDefault(); }, { passive: false });
+  ['touchend', 'touchcancel'].forEach(ev => boostBtn.addEventListener(ev, () => { S.pilotBoost = false; }));
+}
+
+// ══ Virtual Flight Stick สำหรับคนคุมยาน ════════════════════
+const stickZone = $('flight-stick-zone');
+const stickThumb = $('flight-stick-thumb');
+let stickActive = false, stickCenter = { x: 0, y: 0 };
+
+if (stickZone && stickThumb) {
+  function handleStick(clientX, clientY) {
+    const dx = clientX - stickCenter.x;
+    const dy = clientY - stickCenter.y;
+    const maxR = 48.0;
+    const len = Math.hypot(dx, dy);
+    const clampedR = Math.min(maxR, len);
+    const ang = Math.atan2(dy, dx);
+    const nx = (Math.cos(ang) * clampedR) / maxR;
+    const ny = (Math.sin(ang) * clampedR) / maxR;
+
+    S.pilotSteerX = nx;
+    S.pilotSteerY = -ny; // Y ขึ้น = เชิดหัว
+
+    stickThumb.style.transform = `translate(${nx * maxR}px, ${ny * maxR}px)`;
+  }
+
+  stickZone.addEventListener('touchstart', e => {
+    stickActive = true;
+    const rect = stickZone.getBoundingClientRect();
+    stickCenter.x = rect.left + rect.width / 2;
+    stickCenter.y = rect.top + rect.height / 2;
+    handleStick(e.touches[0].clientX, e.touches[0].clientY);
+    e.preventDefault();
+  }, { passive: false });
+
+  window.addEventListener('touchmove', e => {
+    if (!stickActive) return;
+    for (let i = 0; i < e.touches.length; i++) {
+      const t = e.touches[i];
+      if (Math.hypot(t.clientX - stickCenter.x, t.clientY - stickCenter.y) < 140) {
+        handleStick(t.clientX, t.clientY);
+        break;
+      }
+    }
+  }, { passive: false });
+
+  ['touchend', 'touchcancel'].forEach(ev => window.addEventListener(ev, () => {
+    if (!stickActive) return;
+    stickActive = false;
+    S.pilotSteerX = 0;
+    S.pilotSteerY = 0;
+    stickThumb.style.transform = 'translate(0px, 0px)';
+  }));
+}
+
+// ══ คีย์บอร์ดควบคุมการบินสำหรับ Desktop ══════════════════════
+const keys = { w: false, a: false, s: false, d: false, space: false };
+window.addEventListener('keydown', e => {
+  if (S.role !== 'spaceship') return;
+  const k = e.key.toLowerCase();
+  if (k === 'a' || k === 'arrowleft') keys.a = true;
+  if (k === 'd' || k === 'arrowright') keys.d = true;
+  if (k === 'w' || k === 'arrowup') keys.w = true;
+  if (k === 's' || k === 'arrowdown') keys.s = true;
+  if (k === ' ' || k === 'shift') { keys.space = true; sfx.boost(); }
+});
+window.addEventListener('keyup', e => {
+  if (S.role !== 'spaceship') return;
+  const k = e.key.toLowerCase();
+  if (k === 'a' || k === 'arrowleft') keys.a = false;
+  if (k === 'd' || k === 'arrowright') keys.d = false;
+  if (k === 'w' || k === 'arrowup') keys.w = false;
+  if (k === 's' || k === 'arrowdown') keys.s = false;
+  if (k === ' ' || k === 'shift') keys.space = false;
+});
+
 $('again').onclick = () => pane('p-lobby');
 
 // ══ กันจอดับ ══════════════════════════════════════════════
@@ -593,6 +701,7 @@ scene.add(rig.root);
 createTurret(CFG.assets.turret, 0x59c0ff).then(r => {
   scene.remove(rig.root);
   rig = r; rig.root.rotation.y = Math.PI; scene.add(rig.root);
+  if (S.role === 'spaceship') rig.root.visible = false;
 }).catch(() => {});
 
 const look = new TouchLook($('scene'));
@@ -698,7 +807,9 @@ function fire() {
   if (t - S.lastFireAt < CFG.bullet.fireCooldownMs) return;
   S.lastFireAt = t;
 
-  rig.fire(); sfx.shoot(); juice.shake(CFG.juice.shakeFire);
+  if (S.role === 'ground') rig.fire();
+  sfx.shoot();
+  juice.shake(CFG.juice.shakeFire);
   if (S.qteOn) { sock.emit('qte_tap', {}); } else { sock.emit('shot', {}); }
 
   rig.getMuzzle(_mp, _md);
@@ -795,6 +906,16 @@ function paintShipHp() {
       ? `${(spaceEnv.rocketAltKm / 1000).toFixed(0)}k km (Moon Orbit)`
       : `${spaceEnv.rocketAltKm.toFixed(0)} km`;
   }
+
+  // อัปเดต Pilot Navigation Dashboard
+  if (S.role === 'spaceship' && spaceEnv) {
+    const distEl = $('pnd-moon-dist');
+    const spdEl = $('pnd-flight-speed');
+    const ringsEl = $('pnd-rings-passed');
+    if (distEl) distEl.textContent = `${Math.round(spaceEnv.distToMoonKm).toLocaleString('en-US')} KM`;
+    if (spdEl) spdEl.textContent = `${spaceEnv.flightSpeedKmS.toFixed(1)} KM/S`;
+    if (ringsEl) ringsEl.textContent = `${spaceEnv.passedRings.size} / ${spaceEnv.navRings.length} RINGS`;
+  }
 }
 
 function paintHud(leftMs) {
@@ -850,25 +971,53 @@ function frame(nowReal) {
     }
   }
 
-  look.update(dt);
-  camera.position.set(
-    Math.sin(look.yaw) * CFG.camera.eye.z, CFG.camera.eye.y,
-    Math.cos(look.yaw) * CFG.camera.eye.z);
-  const sh = juice.shakeOffset;
-  camera.rotation.set(look.pitch + sh.pitch, look.yaw + sh.yaw, sh.roll, 'YXZ');
+  // บังคับการบิน (Pilot Flight Steering & Navigation)
+  if (S.role === 'spaceship') {
+    let sx = S.pilotSteerX;
+    let sy = S.pilotSteerY;
+    if (keys.a) sx = -1;
+    if (keys.d) sx = 1;
+    if (keys.w) sy = 1;
+    if (keys.s) sy = -1;
+    const boost = S.pilotBoost || keys.space;
 
-  // ป้อมปืนตัวเอง
-  rig.aim(look.yaw, look.pitch);
-  rig.update(dt);
+    spaceEnv.setSteer(sx, sy, boost);
+
+    // ตรวจสอบการบินผ่านวงแหวนนำร่องสู่ดวงจันทร์
+    if (S.playing) {
+      spaceEnv.checkNavRingPassed(ring => {
+        sock.emit('nav_waypoint', { ringId: ring.id });
+      });
+    }
+
+    // อัปเดตกล้อง Chase Cam ตามตัวยาน Long March 5
+    spaceEnv.updateFlightCamera(camera, dt);
+
+    // ส่งสถานะการบิน Sync ไปยังผู้เล่น Ground Crew
+    if (S.playing && (nowReal - S.lastNavEmit > 50)) {
+      S.lastNavEmit = nowReal;
+      sock.emit('ship_nav', spaceEnv.getNavState());
+    }
+  } else {
+    // ผู้เล่น Ground Crew อยู่ที่หอดูดาวภาคพื้นดิน
+    look.update(dt);
+    camera.position.set(
+      Math.sin(look.yaw) * CFG.camera.eye.z, CFG.camera.eye.y,
+      Math.cos(look.yaw) * CFG.camera.eye.z);
+    const sh = juice.shakeOffset;
+    camera.rotation.set(look.pitch + sh.pitch, look.yaw + sh.yaw, sh.roll, 'YXZ');
+
+    rig.aim(look.yaw, look.pitch);
+    rig.update(dt);
+
+    if (S.playing && (nowReal - S.lastAimEmit > 50)) {
+      S.lastAimEmit = nowReal;
+      sock.emit('player_aim', { yaw: look.yaw, pitch: look.pitch });
+    }
+  }
 
   // Sync ป้อมปืนของเพื่อนร่วมทีม
   otherTurrets.forEach(r => r.update(dt));
-
-  // ส่งมุมเล็งตัวเองให้เพื่อนแบบ Throttled ~20Hz
-  if (S.playing && (nowReal - S.lastAimEmit > 50)) {
-    S.lastAimEmit = nowReal;
-    sock.emit('player_aim', { yaw: look.yaw, pitch: look.pitch });
-  }
 
   // อัปเดตอุกกาบาต + เช็คดวงที่ไหม้หมดโดยไม่มีใครยิงทัน (Missed -> ยานโดนดาเมจ)
   field.update(t, burnedOutBuffer);
@@ -884,10 +1033,10 @@ function frame(nowReal) {
   contactLog.update(dt);
   floatText.update(dt);
 
-  // อัปเดตวัตถุอวกาศ 3D (ดวงจันทร์, จรวด Long March 5, CE-7 Probe, จานเรดาร์)
+  // อัปเดตวัตถุอวกาศ 3D (ดวงจันทร์, จรวด Long March 5, CE-7 Probe, จานเรดาร์, วงแหวนนำร่อง)
   const elapsedSec = (t - S.startMs) * 0.001;
   const qteRate = S.qteNeed ? Math.min(1.0, S.qteHits / S.qteNeed) : 0;
-  spaceEnv.update(dt, elapsedSec, S.phase, qteRate);
+  spaceEnv.update(dt, elapsedSec, S.phase, qteRate, S.role === 'spaceship');
 
   if (S.qteOn) {
     const left = Math.max(0, (S.qteEndMs - t) / 1000);

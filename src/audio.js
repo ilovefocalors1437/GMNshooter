@@ -139,6 +139,18 @@ export class Sfx {
     this._tone({ dur: 0.12, gain: 0.25, type: 'sine', f0: 1760, f1: 1760, delay: 0.08 });
   }
 
+  navRing() {
+    if (!this.ready) return;
+    this._tone({ dur: 0.12, gain: 0.28, type: 'sine', f0: 587.33, f1: 880.00 }); // D5 -> A5
+    this._tone({ dur: 0.22, gain: 0.24, type: 'sine', f0: 1174.66, f1: 1760.00, delay: 0.08 }); // D6 -> A6
+  }
+
+  boost() {
+    if (!this.ready) return;
+    this._noise({ dur: 0.45, gain: 0.35, type: 'lowpass', f0: 380, f1: 120 });
+    this._tone({ dur: 0.35, gain: 0.22, type: 'sawtooth', f0: 120, f1: 65 });
+  }
+
   gameOver() {
     if (!this.ready) return;
     this._tone({ dur: 1.5, gain: 0.5, type: 'sine', f0: 220, f1: 42 });

@@ -198,10 +198,73 @@
     box-shadow: 0 0 calc(3 * var(--u)) var(--danger);
   }
 
+  /* ══ Flight Ops / Pilot Lunar Navigation Dashboard ══ */
+  #pilot-nav-dashboard {
+    position: absolute; left: calc(3 * var(--u)); top: 10vh;
+    width: calc(52 * var(--u)); max-width: 320px;
+    background: rgba(6, 16, 32, 0.92);
+    border: calc(0.4 * var(--u)) solid var(--accent);
+    border-radius: calc(1.6 * var(--u));
+    padding: calc(1.8 * var(--u)) calc(2.2 * var(--u));
+    display: none; flex-direction: column; gap: 0.8vh;
+    box-shadow: 0 0 calc(3 * var(--u)) rgba(89, 192, 255, 0.3);
+  }
+  body.is-pilot #pilot-nav-dashboard { display: flex; }
+  body.is-pilot #cards { display: none !important; }
+  body.is-pilot #flight-controls-hint { display: block; }
+  body.is-pilot #flight-stick-zone { display: flex; }
+  body.is-pilot #btn-boost { display: flex; }
+
+  .pnd-title {
+    font-size: calc(2.5 * var(--u)); letter-spacing: 0.16em; color: var(--accent);
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .pnd-row { display: flex; justify-content: space-between; align-items: baseline; font-size: calc(2.8 * var(--u)); }
+  .pnd-row span { opacity: 0.65; font-weight: 400; }
+  .pnd-row b { color: #fff; font-variant-numeric: tabular-nums; font-weight: 700; }
+  .pnd-val-moon { color: #ffe066 !important; font-size: calc(3.4 * var(--u)); }
+  .pnd-val-speed { color: var(--good) !important; font-size: calc(3.4 * var(--u)); }
+
+  /* ── Pilot Flight Stick Virtual Zone ── */
+  #flight-stick-zone {
+    position: absolute; left: calc(4 * var(--u)); bottom: 6vh;
+    width: calc(32 * var(--u)); height: calc(32 * var(--u));
+    max-width: 170px; max-height: 170px;
+    border-radius: 50%; border: calc(0.4 * var(--u)) dashed rgba(89, 192, 255, 0.4);
+    background: rgba(8, 20, 40, 0.6);
+    pointer-events: auto; display: none; align-items: center; justify-content: center;
+    touch-action: none;
+  }
+  #flight-stick-thumb {
+    width: calc(12 * var(--u)); height: calc(12 * var(--u));
+    border-radius: 50%; background: var(--accent);
+    box-shadow: 0 0 calc(2 * var(--u)) var(--accent);
+    transform: translate(0, 0); transition: transform 0.04s ease-out;
+  }
+  #flight-controls-hint {
+    display: none; position: absolute; left: 50%; bottom: 14vh; transform: translateX(-50%);
+    font-size: calc(2.4 * var(--u)); font-weight: 400; opacity: 0.85; white-space: nowrap;
+    background: rgba(4, 8, 18, 0.85); border: 1px solid rgba(89, 192, 255, 0.3);
+    padding: calc(1 * var(--u)) calc(2.4 * var(--u)); border-radius: calc(1.6 * var(--u));
+  }
+
+  /* ── Boost Button ── */
+  #btn-boost {
+    position: absolute; right: calc(24 * var(--u)); bottom: 6vh;
+    width: calc(15 * var(--u)); height: calc(15 * var(--u));
+    max-width: 88px; max-height: 88px;
+    border-radius: 50%; border: calc(0.5 * var(--u)) solid #ffe066;
+    background: rgba(40, 30, 8, 0.85); color: #ffe066;
+    display: none; align-items: center; justify-content: center;
+    font-size: calc(3 * var(--u)); font-weight: 700; letter-spacing: 0.04em;
+    pointer-events: auto; cursor: pointer; box-shadow: 0 0 calc(3 * var(--u)) rgba(255, 224, 102, 0.4);
+  }
+  #btn-boost:active, #btn-boost.active { transform: scale(0.94); background: #ffe066; color: #06121c; }
+
   /* ── Pulse Shield Button (For Pilot) ── */
   #pulse-shield-btn {
-    position:absolute; left:calc(6 * var(--u)); bottom:6vh;
-    padding:calc(2.4 * var(--u)) calc(4 * var(--u));
+    position:absolute; right:calc(42 * var(--u)); bottom:6vh;
+    padding:calc(2.4 * var(--u)) calc(3.6 * var(--u));
     border-radius:calc(3 * var(--u)); border:calc(.5 * var(--u)) solid #8fffa8;
     background:rgba(8, 30, 20, 0.85); color:#8fffa8;
     font-size:calc(3.2 * var(--u)); font-weight:700; letter-spacing:.06em;
@@ -283,8 +346,8 @@
                font-size:calc(2.6 * var(--u)); font-weight:400; opacity:.6;
                background:rgba(4,6,13,.7); padding:calc(1.4 * var(--u)) calc(3 * var(--u));
                border-radius:calc(2 * var(--u)); }
-  body.desktop.unlocked #mousehint { display:block; }
-  body.desktop #fire { display:none; }
+  body.desktop.unlocked:not(.is-pilot) #mousehint { display:block; }
+  body.desktop:not(.is-pilot) #fire { display:none; }
 
   #fire { position:absolute; right:calc(6 * var(--u)); bottom:6vh; width:calc(15 * var(--u)); height:calc(15 * var(--u));
           max-width:88px; max-height:88px;
@@ -420,7 +483,7 @@
       <button type="button" class="role-card" id="role-spaceship">
         <div class="role-icon">🚀</div>
         <div class="role-name">FLIGHT OPS (PILOT)</div>
-        <div class="role-desc">ผู้คุมยาน CE-7 (1 คน) · Orbital Beam & Pulse Shield</div>
+        <div class="role-desc">ผู้บังคับยาน CE-7 บินสู่วงโคจรดวงจันทร์ (1 คน)</div>
       </button>
     </div>
   </div>
@@ -449,7 +512,7 @@
         <div class="story-role-card">
           <span class="sr-icon">🚀</span>
           <b>FLIGHT OPS (PILOT)</b>
-          <p>รักษาระดับเกราะ 200 HP และกด Pulse Shield คุ้มกันยาน</p>
+          <p>บังคับเลี้ยวทิศทางยาน บินลอดวงแหวนนำร่องสู่ดวงจันทร์</p>
         </div>
       </div>
     </div>
@@ -473,6 +536,26 @@
       <div id="teamname">—</div>
     </div>
     <div id="clock">3:00</div>
+  </div>
+
+  <!-- Flight Ops / Pilot Lunar Navigation Dashboard -->
+  <div id="pilot-nav-dashboard">
+    <div class="pnd-title">
+      <span>🚀 LUNAR FLIGHT NAV</span>
+      <span style="color:#ffe066">CE-7 MATCH</span>
+    </div>
+    <div class="pnd-row">
+      <span>ระยะทางถึงดวงจันทร์</span>
+      <b class="pnd-val-moon" id="pnd-moon-dist">384,400 KM</b>
+    </div>
+    <div class="pnd-row">
+      <span>ความเร็วหลุดพ้น</span>
+      <b class="pnd-val-speed" id="pnd-flight-speed">11.2 KM/S</b>
+    </div>
+    <div class="pnd-row">
+      <span>วงแหวนนำร่องที่ผ่าน</span>
+      <b id="pnd-rings-passed" style="color:var(--accent)">0 / 10 RINGS</b>
+    </div>
   </div>
 
   <!-- Spacecraft Shield HP & Altitude Indicator -->
@@ -512,9 +595,18 @@
 
   <div id="cross"><div class="ring"></div><div class="d"></div></div>
   <div id="mousehint">คลิกเพื่อล็อกเมาส์แล้วเล็งได้เลย · คลิก = ยิง · Esc = ปลดล็อก</div>
+  <div id="flight-controls-hint">🎮 บังคับยาน: [W/A/S/D หรือ Drag หน้าจอ] เลี้ยวทิศทาง · [SPACE / ปุ่ม BOOST] เร่งเครื่องยนต์</div>
+
+  <!-- Virtual Flight Joystick for Pilot -->
+  <div id="flight-stick-zone">
+    <div id="flight-stick-thumb"></div>
+  </div>
+
+  <!-- Pilot Thruster Boost Button -->
+  <button type="button" id="btn-boost">⚡ BOOST</button>
 
   <!-- Pilot Skill: Pulse Shield -->
-  <button type="button" id="pulse-shield-btn">🛡️ PULSE SHIELD</button>
+  <button type="button" id="pulse-shield-btn">🛡️ PULSE</button>
 
   <div id="fire">ยิง</div>
 </div>
@@ -561,7 +653,8 @@
 <script src="/static/vendor/NoSleep.min.js"></script>
 <script type="module">
   const box = document.getElementById('err');
-  const show = m => { box.style.display='block'; box.textContent += m + '\n'; };
+  const show = m => { box.style.display='block'; box.textContent += m + '
+'; };
   window.addEventListener('error', e => {
     if (e.filename && e.filename.indexOf(location.origin) !== 0) return;
     show('ERROR: ' + e.message);
