@@ -31,59 +31,86 @@
 
   .pane { position:fixed; inset:0; z-index:10; display:none;
           flex-direction:column; align-items:center; justify-content:center;
-          gap:2.4vh; padding:calc(6 * var(--u)); text-align:center;
+          gap:2.2vh; padding:calc(5 * var(--u)); text-align:center;
           background:radial-gradient(ellipse at 50% 30%, #0d1730 0%, #04060d 72%); }
   .pane.on { display:flex; }
 
-  h1 { font-size:calc(10 * var(--u)); letter-spacing:.08em; }
+  h1 { font-size:calc(9.5 * var(--u)); letter-spacing:.08em; }
   h1 .b { color:var(--accent); }
-  .sub { font-size:calc(3.8 * var(--u)); opacity:.75; font-weight:400; line-height:1.6; }
+  .sub { font-size:calc(3.6 * var(--u)); opacity:.75; font-weight:400; line-height:1.5; }
   .mission-tag {
-    font-size:calc(2.6 * var(--u)); letter-spacing:.2em; color:var(--accent);
-    padding:calc(.8 * var(--u)) calc(2.4 * var(--u)); border-radius:calc(2 * var(--u));
-    background:rgba(89,192,255,.14); border:1px solid rgba(89,192,255,.3); margin-bottom:1vh;
+    font-size:calc(2.5 * var(--u)); letter-spacing:.2em; color:var(--accent);
+    padding:calc(.8 * var(--u)) calc(2.2 * var(--u)); border-radius:calc(2 * var(--u));
+    background:rgba(89,192,255,.14); border:1px solid rgba(89,192,255,.3); margin-bottom:.8vh;
   }
-  .err { color:var(--danger); font-size:calc(4 * var(--u)); min-height:calc(5 * var(--u)); }
+  .err { color:var(--danger); font-size:calc(3.8 * var(--u)); min-height:calc(4.5 * var(--u)); }
 
   input {
-    font-weight:700; font-size:calc(9 * var(--u)); line-height:1.2;
+    font-weight:700; font-size:calc(8.5 * var(--u)); line-height:1.2;
     font-family:"Bahnschrift","Segoe UI",sans-serif; text-align:center;
-    width:calc(74 * var(--u)); padding:calc(3 * var(--u)); border-radius:calc(3 * var(--u)); border:calc(.7 * var(--u)) solid rgba(255,255,255,.25);
+    width:calc(74 * var(--u)); padding:calc(2.8 * var(--u)); border-radius:calc(2.6 * var(--u)); border:calc(.7 * var(--u)) solid rgba(255,255,255,.25);
     background:rgba(255,255,255,.06); color:#fff; letter-spacing:.16em; text-transform:uppercase;
   }
   input:focus { outline:none; border-color:var(--accent); }
 
   .btn {
-    font-size:calc(5.4 * var(--u)); padding:calc(3 * var(--u)) calc(8 * var(--u)); border-radius:calc(3 * var(--u)); border:none;
+    font-size:calc(5 * var(--u)); padding:calc(2.8 * var(--u)) calc(7.5 * var(--u)); border-radius:calc(2.6 * var(--u)); border:none;
     background:var(--accent); color:#06121c; letter-spacing:.06em; cursor:pointer;
   }
   .btn.ghost { background:rgba(255,255,255,.10); color:#fff; }
   .btn:disabled { opacity:.4; }
 
-  .roster { display:flex; gap:calc(2.4 * var(--u)); }
-  .dot { width:calc(9 * var(--u)); height:calc(9 * var(--u)); border-radius:50%; opacity:.22; }
+  /* ── Role Selector ── */
+  .role-box { width:100%; max-width:480px; margin:1vh 0; }
+  .role-title { font-size:calc(3 * var(--u)); letter-spacing:.14em; opacity:.6; margin-bottom:1vh; }
+  .role-grid { display:grid; grid-template-columns:1fr 1fr; gap:calc(2 * var(--u)); }
+  .role-card {
+    background:rgba(255,255,255,.04); border:calc(.4 * var(--u)) solid rgba(255,255,255,.16);
+    border-radius:calc(2 * var(--u)); padding:calc(2 * var(--u)) calc(1.4 * var(--u));
+    color:#fff; cursor:pointer; display:flex; flex-direction:column; align-items:center; gap:.4vh;
+    transition:all .15s ease-out;
+  }
+  .role-card.on {
+    border-color:var(--accent); background:rgba(89,192,255,.16);
+    box-shadow:0 0 calc(3 * var(--u)) rgba(89,192,255,.25);
+  }
+  .role-icon { font-size:calc(6.5 * var(--u)); }
+  .role-name { font-size:calc(3.2 * var(--u)); font-weight:700; letter-spacing:.04em; }
+  .role-desc { font-size:calc(2.2 * var(--u)); opacity:.6; font-weight:400; line-height:1.3; }
+
+  /* ── Roster Display ── */
+  .roster { display:flex; flex-direction:column; gap:calc(1.2 * var(--u)); width:100%; max-width:420px; margin:1vh 0; }
+  .roster-item {
+    display:flex; align-items:center; justify-content:space-between;
+    background:rgba(255,255,255,.05); padding:calc(1.2 * var(--u)) calc(2.4 * var(--u));
+    border-radius:calc(1.4 * var(--u));
+  }
+  .roster-name { font-size:calc(3.4 * var(--u)); font-weight:700; }
+  .roster-role { font-size:calc(2.6 * var(--u)); font-weight:700; opacity:.75; }
+  .roster-role.pilot { color:var(--accent); opacity:1; }
+  .dot { width:calc(4 * var(--u)); height:calc(4 * var(--u)); border-radius:50%; opacity:.3; margin-right:calc(1.4 * var(--u)); }
   .dot.on { opacity:1; }
 
-  #countdown { font-size:calc(34 * var(--u)); line-height:1; color:var(--accent); }
+  #countdown { font-size:calc(32 * var(--u)); line-height:1; color:var(--accent); }
 
   /* ══ HUD ตอนเล่น ══ */
   #hud { position:fixed; inset:0; z-index:5; pointer-events:none; display:none; }
   #hud.on { display:block; }
-  #topbar { position:absolute; top:0; left:0; right:0; padding:calc(2.6 * var(--u)) calc(4 * var(--u));
+  #topbar { position:absolute; top:0; left:0; right:0; padding:calc(2.4 * var(--u)) calc(3.6 * var(--u));
             display:flex; justify-content:space-between; align-items:flex-start;
-            background:linear-gradient(rgba(0,0,0,.65), transparent); }
+            background:linear-gradient(rgba(0,0,0,.7), transparent); }
   #teamscore { font-size:calc(4.8 * var(--u)); line-height:1; text-shadow:0 0 calc(2 * var(--u)) rgba(89,192,255,.5); }
-  #teamname { font-size:calc(2.6 * var(--u)); opacity:.55; letter-spacing:.14em; font-weight:400; }
+  #teamname { font-size:calc(2.5 * var(--u)); opacity:.6; letter-spacing:.12em; font-weight:400; }
   #clock { display:none; }
   #combo { position:absolute; top:13vh; left:0; right:0; text-align:center;
-           font-size:calc(6 * var(--u)); color:var(--good); opacity:0; transition:opacity .15s; }
+           font-size:calc(5.5 * var(--u)); color:var(--good); opacity:0; transition:opacity .15s; }
   #combo.on { opacity:1; }
 
   /* ── Spacecraft Shield & Altitude Box ── */
   #ship-status-box {
     position: absolute; right: calc(3 * var(--u)); top: 10vh;
     width: calc(48 * var(--u)); max-width: 290px;
-    background: rgba(8, 14, 28, 0.85);
+    background: rgba(8, 14, 28, 0.88);
     border: calc(0.3 * var(--u)) solid rgba(89, 192, 255, 0.35);
     border-radius: calc(1.4 * var(--u));
     padding: calc(1.6 * var(--u)) calc(2 * var(--u));
@@ -112,14 +139,28 @@
   .ship-footer span { opacity: 0.65; font-size: calc(2.4 * var(--u)); font-weight: 400; }
   #ship-hp-num { font-weight: 700; color: #fff; font-variant-numeric: tabular-nums; }
 
-  /* Red flash on damage */
+  /* Red flash on damage / Green flash on heal */
   body.hit-flash #hud {
     background: radial-gradient(ellipse at 50% 50%, rgba(255, 77, 109, 0.4) 0%, transparent 80%);
+  }
+  body.heal-flash #hud {
+    background: radial-gradient(ellipse at 50% 50%, rgba(143, 255, 168, 0.3) 0%, transparent 80%);
   }
   body.emergency-mode #ship-status-box {
     border-color: var(--danger);
     box-shadow: 0 0 calc(3 * var(--u)) var(--danger);
   }
+
+  /* ── Pulse Shield Button (For Pilot) ── */
+  #pulse-shield-btn {
+    position:absolute; left:calc(6 * var(--u)); bottom:6vh;
+    padding:calc(2.4 * var(--u)) calc(4 * var(--u));
+    border-radius:calc(3 * var(--u)); border:calc(.5 * var(--u)) solid #8fffa8;
+    background:rgba(8, 30, 20, 0.85); color:#8fffa8;
+    font-size:calc(3.2 * var(--u)); font-weight:700; letter-spacing:.06em;
+    pointer-events:auto; display:none; cursor:pointer; box-shadow:0 0 calc(3 * var(--u)) rgba(143,255,168,.4);
+  }
+  #pulse-shield-btn:active { transform:scale(0.95); }
 
   /* ── Crosshair ── */
   #cross { position:absolute; left:50%; top:50%; width:calc(14 * var(--u)); height:calc(14 * var(--u));
@@ -131,19 +172,19 @@
               margin:calc(-.5 * var(--u)) 0 0 calc(-.5 * var(--u)); background:#fff; border-radius:50%; }
 
   /* ── Contact Cards ── */
-  #cards { position:absolute; left:calc(3 * var(--u)); top:10vh; width:calc(50 * var(--u)); max-width:320px; }
-  .cd { background:rgba(8,14,28,.82); border-left:calc(1 * var(--u)) solid var(--accent);
-        border-radius:calc(1.4 * var(--u)); padding:calc(1.8 * var(--u)) calc(2.2 * var(--u)); margin-bottom:calc(1.4 * var(--u));
-        font-size:calc(3 * var(--u)); line-height:1.45; font-weight:400; }
+  #cards { position:absolute; left:calc(3 * var(--u)); top:10vh; width:calc(48 * var(--u)); max-width:310px; }
+  .cd { background:rgba(8,14,28,.84); border-left:calc(1 * var(--u)) solid var(--accent);
+        border-radius:calc(1.4 * var(--u)); padding:calc(1.6 * var(--u)) calc(2 * var(--u)); margin-bottom:calc(1.4 * var(--u));
+        font-size:calc(2.9 * var(--u)); line-height:1.45; font-weight:400; }
   .cd.miss { border-left-color:var(--danger); opacity:.75; }
   .cd.fresh { animation:cdin 300ms ease-out; }
   @keyframes cdin { from { opacity:0; transform:translateX(calc(-4 * var(--u))); } }
-  .cd-grp { font-weight:700; color:#cfe6ff; font-size:calc(3.5 * var(--u)); margin-bottom:calc(.4 * var(--u)); }
+  .cd-grp { font-weight:700; color:#cfe6ff; font-size:calc(3.3 * var(--u)); margin-bottom:calc(.4 * var(--u)); }
   .cd-row { display:flex; justify-content:space-between; gap:calc(2 * var(--u)); }
   .cd-row span { opacity:.6; }
   .cd-row b { text-align:right; font-weight:700; }
-  .cd-row b i { font-style:normal; opacity:.75; font-size:calc(2.6 * var(--u)); }
-  .cd-cam { margin-top:calc(.6 * var(--u)); color:var(--good); font-weight:700; font-size:calc(2.6 * var(--u)); }
+  .cd-row b i { font-style:normal; opacity:.75; font-size:calc(2.5 * var(--u)); }
+  .cd-cam { margin-top:calc(.6 * var(--u)); color:var(--good); font-weight:700; font-size:calc(2.5 * var(--u)); }
 
   /* ── พายุ ── */
   body.storm #hud { box-shadow:inset 0 0 calc(14 * var(--u)) rgba(255,77,109,.45); }
@@ -207,9 +248,9 @@
 
   /* ══ สรุปผล & E-Certificate ══ */
   #p-sum { justify-content:flex-start; padding:4vh calc(5 * var(--u)) 8vh; gap:0; overflow-y:auto; }
-  #p-sum .s-team { font-size:calc(3.4 * var(--u)); opacity:.55; font-weight:400; letter-spacing:.1em; }
-  #p-sum .s-team b { font-weight:700; opacity:1; letter-spacing:.04em; }
-  #p-sum .s-score { font-size:calc(18 * var(--u)); line-height:1; color:var(--accent);
+  #p-sum .s-team { font-size:calc(3.4 * var(--u)); opacity:.7; font-weight:400; letter-spacing:.08em; }
+  #p-sum .s-team b { font-weight:700; opacity:1; letter-spacing:.04em; color:var(--accent); }
+  #p-sum .s-score { font-size:calc(17 * var(--u)); line-height:1; color:var(--accent);
                     font-variant-numeric:tabular-nums;
                     text-shadow:0 0 calc(8 * var(--u)) rgba(89,192,255,.35); }
   #p-sum .s-kills { width:100%; font-weight:400; opacity:.9; margin-top:.4vh; }
@@ -268,6 +309,7 @@
   #p-sum .s-nums .sc b { font-weight:700; font-size:calc(4.6 * var(--u)); color:var(--accent);
                          font-variant-numeric:tabular-nums; }
   #p-sum .btn { margin-top:3.6vh; }
+  .pilot-tag { color:var(--accent); font-weight:700; }
 </style>
 </head>
 <body>
@@ -314,14 +356,32 @@
   <button class="btn" id="name-go">ยืนยัน</button>
 </div>
 
-<!-- 3. ห้องรอ -->
+<!-- 3. ห้องรอ & เลือกตำแหน่งหน้าที่ (Role Selection) -->
 <div id="p-lobby" class="pane">
-  <div class="sub">คุณคือ Ground Guardian ประจำสถานี</div>
-  <h1 id="lobby-name" style="font-size:calc(8.5 * var(--u))">—</h1>
+  <div class="sub">ยินดีต้อนรับสู่ทีมภารกิจ</div>
+  <h1 id="lobby-name" style="font-size:calc(8 * var(--u))">—</h1>
+
+  <!-- Role Selector -->
+  <div class="role-box">
+    <div class="role-title">เลือกตำแหน่งหน้าที่ในภารกิจ</div>
+    <div class="role-grid">
+      <button type="button" class="role-card on" id="role-ground">
+        <div class="role-icon">📡</div>
+        <div class="role-name">GROUND CREW</div>
+        <div class="role-desc">หน่วยเลเซอร์ภาคพื้น ยิงสแกนสะเก็ดดาว GMN</div>
+      </button>
+      <button type="button" class="role-card" id="role-spaceship">
+        <div class="role-icon">🚀</div>
+        <div class="role-name">FLIGHT OPS (PILOT)</div>
+        <div class="role-desc">ผู้คุมยาน CE-7 (1 คน) · Orbital Beam & Pulse Shield</div>
+      </button>
+    </div>
+  </div>
+
   <div class="roster" id="roster"></div>
   <div class="sub" id="lobby-hint">รอผู้ดูแลสั่งปล่อยจรวด · เพื่อนร่วมทีมยังเข้าได้อีก</div>
-  <div class="sub" id="lobby-count" style="font-size:calc(5 * var(--u));color:var(--accent)">1 คน</div>
-  <div class="sub" style="font-size:calc(3.4 * var(--u))">รหัสห้อง <b id="lobby-code">—</b></div>
+  <div class="sub" id="lobby-count" style="font-size:calc(4.5 * var(--u));color:var(--accent)">1 คน</div>
+  <div class="sub" style="font-size:calc(3.2 * var(--u))">รหัสห้อง <b id="lobby-code">—</b></div>
 </div>
 
 <!-- 4. นับถอยหลัง -->
@@ -352,7 +412,7 @@
     </div>
   </div>
 
-  <div id="combo">COMBO ×1</div>
+  <div id="combo">TEAM COMBO ×1</div>
   <div id="cards"><div id="cardlist"></div></div>
 
   <div id="stormbar">
@@ -374,19 +434,23 @@
 
   <div id="cross"><div class="ring"></div><div class="d"></div></div>
   <div id="mousehint">คลิกเพื่อล็อกเมาส์แล้วเล็งได้เลย · คลิก = ยิง · Esc = ปลดล็อก</div>
+
+  <!-- Pilot Skill: Pulse Shield -->
+  <button type="button" id="pulse-shield-btn">🛡️ PULSE SHIELD</button>
+
   <div id="fire">ยิง</div>
 </div>
 
-<!-- 6. สรุปผล & E-Certificate -->
+<!-- 6. สรุปผล & E-Certificate ระดับทีม -->
 <div id="p-sum" class="pane">
   <div class="s-team"><b id="sum-team">—</b></div>
   <div class="s-score" id="sum-score">0</div>
   <div class="s-kills" id="sum-kills"></div>
 
-  <h2>คะแนนของสมาชิกในทีม</h2>
+  <h2>รายชื่อสมาชิกในทีม</h2>
   <div class="s-list" id="sum-board"></div>
 
-  <h2>สะเก็ดดาวที่คุณสแกน & สกัดกั้น</h2>
+  <h2>สะเก็ดดาวที่สแกน & สกัดกั้นร่วมกัน</h2>
   <div class="s-list" id="sum-list"></div>
 
   <h2>THAILAND CE-7 MOONSHOT & GMN</h2>
@@ -410,9 +474,7 @@
   body.spectator .credit { font-size:calc(1.6 * var(--u)); }
   body.spectator #cards  { width:calc(36 * var(--u)); font-size:.9em; }
   body.spectator #teamscore { font-size:calc(3.2 * var(--u)); }
-  #sum-board .s-row.me { background:rgba(89,192,255,.16); border-radius:calc(1 * var(--u)); }
-  #sum-board .s-row.me .nm { color:var(--accent); }
-  #sum-board .tag { font-size:.75em; opacity:.6; font-weight:400; }
+  .tag { font-size:.75em; opacity:.85; padding:calc(.3*var(--u)) calc(1*var(--u)); border-radius:calc(.8*var(--u)); background:rgba(255,255,255,.1); }
 </style>
 <div class="credit">Meteor Data: Global Meteor Network (CC BY 4.0) · Mission Lore: NARIT Thailand Moonshot</div>
 <div id="err"></div>

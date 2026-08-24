@@ -112,7 +112,7 @@
 
   <!-- 3. leaderboard -->
   <div class="card">
-    <h3>LEADERBOARD — รายบุคคล (รวมผู้ดูแล)</h3>
+    <h3>LEADERBOARD — อันดับทีมภารกิจ (รวมผู้ดูแล)</h3>
     <table id="board"></table>
   </div>
 
@@ -168,8 +168,8 @@ s.on('error_msg', d => msg(d.msg, true));
 const STATE_TH = { lobby:'รอเริ่ม', countdown:'นับถอยหลัง', playing:'กำลังเล่น',
                    qte:'ลูกไฟดวงสุดท้าย', ended:'จบรอบ' };
 s.on('room', st => {
-  // ชื่อเป็นของรายคนแล้ว โชว์ว่าใครอยู่ในสนามบ้าง
-  $('who').textContent = st.players.filter(p => p.named).map(p => p.name).join(' · ') || '—';
+  // แสดงชื่อและหน้าที่ของผู้เล่นในสนาม
+  $('who').textContent = st.players.filter(p => p.named).map(p => (p.role === 'spaceship' ? '🚀 ' : '📡 ') + p.name).join(' · ') || '—';
   $('pcount').textContent = st.playerCount;
   $('state').textContent = STATE_TH[st.state] || st.state;
   $('dots').innerHTML = st.players.map(p =>
@@ -178,9 +178,7 @@ s.on('room', st => {
 });
 
 s.on('round_end', d => {
-  const top = (d.results || [])[0];
-  msg(top ? `จบรอบ · ที่ 1 คือ ${top.name} ได้ ${fmt(top.score)} (อันดับรวม ${top.rank})`
-          : 'จบรอบ');
+  msg(d.teamName ? `จบรอบ · ${d.teamName} ได้ ${fmt(d.teamScore)} (อันดับ #${d.teamRank})` : 'จบรอบ');
   board();
 });
 

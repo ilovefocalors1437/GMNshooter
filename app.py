@@ -562,6 +562,28 @@ def on_player_fire(data=None):
             }, to=room.code, include_self=False)
 
 
+@socketio.on("select_role")
+@safe
+def on_select_role(data=None):
+    """เลือกหน้าที่: 'ground' (ภาคพื้น) หรือ 'spaceship' (ผู้ควบคุมยาน จำกัด 1 คนต่อทีม)"""
+    room = rooms.room_of_sid(request.sid)
+    if room and room.state == "lobby":
+        role = (data or {}).get("role", "ground")
+        room.set_player_role(request.sid, role)
+        _emit_room(room)
+
+
+@socketio.on("pulse_shield")
+@safe
+def on_pulse_shield(data=None):
+    """ผู้ควบคุมยานเปิดใช้งาน Energy Pulse ฟื้นฟูเกราะยาน +15 HP"""
+    room = rooms.room_of_sid(request.sid)
+    if room:
+        res = room.pulse_shield(request.sid)
+        if res:
+            socketio.emit("shield_pulse", res, to=room.code)
+
+
 @socketio.on("miss")
 @safe
 def on_miss(data=None):
@@ -667,9 +689,10 @@ def _round_watcher():
                 elif room.state == "qte":
                     socketio.emit("tick", {
                         "timeLeftMs": 0, "qteLeftMs": round(room.qte_left_ms()),
-                        # คะแนนรายคน — client หยิบ slot ของตัวเองไปขึ้น HUD
-                        "scores": {p.slot: p.score for p in room.active()},
-                        "combos": {p.slot: p.combo for p in room.active()},
+                        "teamScore": room.team_score,
+                        "teamCombo": room.team_combo,
+                        "score": room.team_score,
+                        "combo": room.team_combo,
                         "kills": room.kills,
                         "phase": "qte",
                         "qteHits": room.qte_hits, "qteNeed": room.qte_need,
@@ -679,10 +702,11 @@ def _round_watcher():
                 elif room.state == "playing":
                     socketio.emit("tick", {
                         "timeLeftMs": round(room.time_left_ms()),
-                        "scores": {p.slot: p.score for p in room.active()},
-                        "combos": {p.slot: p.combo for p in room.active()},
+                        "teamScore": room.team_score,
+                        "teamCombo": room.team_combo,
+                        "score": room.team_score,
+                        "combo": room.team_combo,
                         "kills": room.kills,
-                        # client ใช้ phase ตัดสินว่าจะซ่อนการ์ด/โชว์ตัวนับพายุเมื่อไร
                         "phase": room.phase(),
                         "stormHits": room.storm_hits, "stormTotal": room.storm_total,
                         "shipHp": room.ship_hp, "shipMaxHp": room.ship_max_hp,
@@ -699,11 +723,7 @@ def _round_watcher():
 
 def _finish_round(room):
     """
-    จบรอบ — บันทึก **แถวละคน** ลง leaderboard เดียวกันทั้ง admin ทั้งเด็ก
-
-    ตัวคูณพายุกับโบนัส QTE เป็นผลของทั้งห้อง แต่เอามาคิดกับคะแนนของแต่ละคน
-    → event พิเศษยังต้องช่วยกันเหมือนเดิม ใครอู้ก็ฉุดคะแนนตัวเองลงด้วย
-    (เปลี่ยนเมื่อ 2026-08-24 — เดิมเป็นแถวละทีม เรียงด้วยคะแนนต่อหัว ดู CLAUDE.md)
+    จบรอบ — บันทึก **คะแนนรวมของทีม** (Team Leaderboard)
     """
     with room.lock:
         passed, mult, rate = room.storm_result()
@@ -711,29 +731,25 @@ def _finish_round(room):
         players = room.active()
         mission_rank = room.calc_rank()
 
-        results = board.submit_round(
+        res = board.submit_round(
             [{"name": p.display, "raw": p.score, "kills": p.kills,
-              "bestCombo": p.best_combo, "isAdmin": p.is_admin, "slot": p.slot}
+              "bestCombo": p.best_combo, "isAdmin": p.is_admin, "slot": p.slot, "role": p.role}
              for p in players],
             storm_mult=mult, bonus=qte_bonus,
-            storm_passed=passed, qte_passed=qte_passed)
+            storm_passed=passed, qte_passed=qte_passed,
+            team_score=room.team_score, team_kills=room.kills,
+            team_best_combo=room.team_best_combo, code=room.code)
 
-        by_slot = {r["slot"]: r for r in results}
-        room.last_board = results
-
-        # แต่ละคนต้องเห็นคะแนน *ของตัวเอง* กับอันดับของตัวเอง
-        # เลยส่งผลของทุกคนไปด้วยกัน แล้วให้ client หยิบ slot ตัวเองออกมา
-        me_rows = [{
-            "slot": p.slot, "name": p.display, "color": p.color, "hex": p.hex,
-            "isAdmin": p.is_admin,
-            "rawScore": p.score, "kills": p.kills, "bestCombo": p.best_combo,
-            "score": by_slot.get(p.slot, {}).get("score", 0),
-            "rank": by_slot.get(p.slot, {}).get("rank", 0),
-        } for p in players]
-        me_rows.sort(key=lambda r: r["score"], reverse=True)
+        room.last_board = res
 
         summary = {
-            "results": me_rows,                 # ← ของใครของมัน เรียงมากไปน้อย
+            "teamName": res["teamName"],
+            "teamScore": res["teamScore"],
+            "teamRawScore": res["teamRawScore"],
+            "teamKills": res["teamKills"],
+            "teamBestCombo": res["teamBestCombo"],
+            "teamRank": res["teamRank"],
+            "results": res["players"],
             "stormMult": mult, "stormPassed": passed,
             "stormHits": room.storm_hits, "stormTotal": room.storm_total,
             "stormRate": round(rate, 3), "stormPassRate": C.STORM_PASS_RATE,
@@ -747,7 +763,7 @@ def _finish_round(room):
             "totalRounds": board.total_rounds(),
             "gmnTotal": gmn_db.count(),
             "gmnCameras": C.GMN_CAMERAS_WORLDWIDE,
-            "top": board.top(10),               # บอร์ดเดียว รวม admin ด้วย
+            "top": board.top(10),
             "shipHp": room.ship_hp,
             "shipMaxHp": room.ship_max_hp,
             "missionRank": mission_rank,

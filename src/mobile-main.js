@@ -1,9 +1,11 @@
-// mobile-main.js — Thailand CE-7 Moonshot x GMNshooter (Phase C Full Multi-Turret Co-op)
+// mobile-main.js — Thailand CE-7 Moonshot x GMNshooter (Team Score & Dual-Role Co-op)
 //
-// 1. เรนเดอร์ Three.js พร้อม 3D Space Assets (Moon, Long March 5, CE-7 MATCH, Tracking Dishes)
-// 2. แสดงป้อมปืนของผู้เล่นคนอื่นในห้อง (1–5 คน) พร้อม Sync ทิศทางเล็ง (Aim) และการยิง (Laser Tracers)
-// 3. ระบบเกราะยาน 200 HP และคำนวณ Damage จากความเร็วอุกกาบาต GMN จริง
-// 4. หน้าสรุปผลพร้อมตราเกียรติยศ E-Certificate "Thailand CE-7 Moonshot Ground Guardian"
+// 1. ระบบเลือก Role ในห้อง Lobby:
+//    - 📡 GROUND CREW: พลเลเซอร์ภาคพื้นดิน ยิงสแกนสะเก็ดดาว
+//    - 🚀 FLIGHT OPS / PILOT: ผู้ควบคุมยาน Long March 5 (จำกัด 1 คน) พร้อมสกิล Shield Pulse (+15 HP) & Orbital Beam
+// 2. ระบบคะแนนรวมของทั้งทีม (Team Score & Team Combo)
+// 3. ป้อมปืนและ Action การยิงของผู้เล่นทุกคนในทีม (Multi-Turret Sync)
+// 4. E-Certificate เกียรติยศระดับทีม "Thailand CE-7 Moonshot Flight & Ground Crew"
 
 import * as THREE from 'three';
 import { CFG, DEG, clamp, damp } from './config.js';
@@ -35,6 +37,7 @@ function pane(id) {
 const S = {
   token: null, slot: 0, hex: '#59c0ff', rgb: [0.35, 0.75, 1],
   code: null, name: null,
+  role: 'ground', // 'ground' | 'spaceship'
   roundId: 0, startMs: 0, endMs: 0,
   schedule: [], spawned: new Set(), destroyed: new Set(), missed: new Set(),
   playing: false,
@@ -43,6 +46,7 @@ const S = {
   stormStartSec: 40, stormPassRate: 0.55, stormMinScale: 0.6,
   offset: 0, bestRtt: Infinity,
   lastFireAt: -1e9,
+  lastShieldPulseAt: -1e9,
   lastAimEmit: 0,
   spectator: SPECTATE,
   // ยานอวกาศ & เกราะ
@@ -101,11 +105,13 @@ sock.on('join_failed', d => {
 sock.on('joined', d => {
   S.token = d.token; S.slot = d.slot; S.hex = d.hex; S.rgb = d.rgb;
   S.code = d.code; S.name = d.needName ? null : d.name; S.isAdmin = !!d.isAdmin;
+  S.role = d.role || 'ground';
   sessionStorage.setItem('spaceht_token', d.token);
   sessionStorage.setItem('spaceht_code', d.code);
   document.documentElement.style.setProperty('--me', d.hex);
   $('lobby-code').textContent = d.code;
   $('lobby-name').textContent = S.name || '—';
+  updateRoleUi();
   pane(d.needName ? 'p-name' : 'p-lobby');
   armNoSleep();
   if (ADMIN_MODE) sock.emit('admin_room_start', { pw: sessionStorage.getItem('ht_pw') || '' });
@@ -151,9 +157,20 @@ function syncTeammateTurrets(players = []) {
   }
 }
 
+function updateRoleUi() {
+  const isShip = S.role === 'spaceship';
+  $('role-ground')?.classList.toggle('on', !isShip);
+  $('role-spaceship')?.classList.toggle('on', isShip);
+  document.body.classList.toggle('is-pilot', isShip);
+  const pulseBtn = $('pulse-shield-btn');
+  if (pulseBtn) pulseBtn.style.display = isShip ? 'flex' : 'none';
+}
+
 sock.on('room', st => {
   const me = (st.players || []).find(p => p.slot === S.slot);
   if (me && !S.spectator) {
+    S.role = me.role || 'ground';
+    updateRoleUi();
     if (!me.named && S.name && st.state === 'lobby' && !S.playing) {
       S.name = null;
       $('lobby-name').textContent = '—';
@@ -164,10 +181,18 @@ sock.on('room', st => {
       if (!S.playing && $('p-name').classList.contains('on')) pane('p-lobby');
     }
   }
-  $('teamname').textContent = S.name || '';
+  $('teamname').textContent = (S.role === 'spaceship' ? '🚀 [FLIGHT OPS] ' : '📡 [GROUND] ') + (S.name || '');
   const r = $('roster');
-  r.innerHTML = st.players.map(p =>
-    `<div class="dot${p.connected ? ' on' : ''}" style="background:${p.hex}"></div>`).join('');
+  r.innerHTML = (st.players || []).map(p => {
+    const roleIcon = p.role === 'spaceship' ? '🚀' : '📡';
+    const roleText = p.role === 'spaceship' ? 'PILOT' : 'GROUND';
+    return `<div class="roster-item">` +
+      `<div class="dot${p.connected ? ' on' : ''}" style="background:${p.hex}"></div>` +
+      `<span class="roster-name">${escapeHtml(p.name || '?')}</span>` +
+      `<span class="roster-role ${p.role === 'spaceship' ? 'pilot' : ''}">${roleIcon} ${roleText}</span>` +
+      `</div>`;
+  }).join('');
+  
   const cnt = $('lobby-count');
   if (cnt) cnt.textContent = `${st.playerCount} คน`;
 
@@ -194,6 +219,18 @@ sock.on('player_fire', d => {
   }
 });
 
+// รับ Event Energy Pulse ฟื้นฟูเกราะ
+sock.on('shield_pulse', d => {
+  S.shipHp = d.shipHp;
+  S.shipMaxHp = d.shipMaxHp;
+  paintShipHp();
+  juice.shake(0.8);
+  sfx.resume();
+  floatText.add(new THREE.Vector3(0, 2.0, -4), `+${d.heal} HP SHIELD PULSE! 🛡️ (${escapeHtml(d.name)})`);
+  document.body.classList.add('heal-flash');
+  setTimeout(() => document.body.classList.remove('heal-flash'), 300);
+});
+
 // รับ Event ดาเมจยาน Long March 5
 sock.on('ship_damage', d => {
   S.shipHp = d.shipHp;
@@ -202,7 +239,6 @@ sock.on('ship_damage', d => {
   juice.shake(1.1);
   sfx.hit(1);
 
-  // แจ้งเตือนดาเมจสีแดงบนหน้าจอ
   const hitPos = new THREE.Vector3(0, 1.4, -4);
   floatText.add(hitPos, `-${d.dmg} เกราะยาน! (${d.speed} km/s)`);
 
@@ -234,12 +270,15 @@ sock.on('round_start', d => {
   pane('p-count');
   sfx.resume();
   paintShipHp();
+  updateRoleUi();
   syncTeammateTurrets(d.players || []);
 });
 
 sock.on('tick', d => {
-  if (d.scores) S.score = d.scores[S.slot] ?? S.score;
-  if (d.combos) S.combo = d.combos[S.slot] ?? S.combo;
+  if (d.teamScore !== undefined) S.score = d.teamScore;
+  else if (d.score !== undefined) S.score = d.score;
+  if (d.teamCombo !== undefined) S.combo = d.teamCombo;
+  else if (d.combo !== undefined) S.combo = d.combo;
   if (d.shipHp !== undefined) { S.shipHp = d.shipHp; S.shipMaxHp = d.shipMaxHp; paintShipHp(); }
   S.kills = d.kills;
   if (d.qteNeed !== undefined) { S.qteHits = d.qteHits; S.qteNeed = d.qteNeed; }
@@ -313,7 +352,10 @@ function setPhase(ph) {
 // อุกกาบาตถูกยิงแตก
 sock.on('destroyed', d => {
   S.destroyed.add(d.meteorId);
-  if (d.slot === S.slot) { S.score = d.score; S.combo = d.combo; }
+  if (d.teamScore !== undefined) S.score = d.teamScore;
+  else if (d.score !== undefined) S.score = d.score;
+  if (d.teamCombo !== undefined) S.combo = d.teamCombo;
+  else if (d.combo !== undefined) S.combo = d.combo;
   if (d.shipHp !== undefined) { S.shipHp = d.shipHp; paintShipHp(); }
   if (d.stormTotal !== undefined) { S.stormHits = d.stormHits; S.stormTotal = d.stormTotal; }
   const m = field.byId(d.meteorId);
@@ -323,12 +365,12 @@ sock.on('destroyed', d => {
     if (S.phase !== 'storm' && m.gmn) floatText.add(m.position, m.gmn.duration);
     contactLog.add(m, 'hit');
     field.kill(m);
-    sfx.hit(d.slot === S.slot ? d.combo : 1);
-    if (d.slot === S.slot) juice.shake(CFG.juice.shakeHit);
+    sfx.hit(S.combo);
+    juice.shake(CFG.juice.shakeHit);
   }
 });
 
-// ══ จบรอบ & แจก E-Certificate ══════════════════════════════
+// ══ จบรอบ & แจก E-Certificate ระดับทีม ═════════════════════
 sock.on('round_end', d => {
   S.playing = false;
   S.qteOn = false;
@@ -336,15 +378,14 @@ sock.on('round_end', d => {
   document.body.classList.remove('qte');
   $('qtebar').style.display = 'none';
 
-  const mine = (d.results || []).find(r => r.slot === S.slot) || {};
-  $('sum-team').textContent = mine.name || S.name || '—';
-  $('sum-score').textContent = (mine.score || 0).toLocaleString('en-US');
+  $('sum-team').textContent = d.teamName || S.code || 'ทีมผู้พิทักษ์';
+  $('sum-score').textContent = (d.teamScore || S.score || 0).toLocaleString('en-US');
   
   const rank = d.missionRank || 'A';
   const rankColors = { 'S': '#ffe066', 'A': '#8fffa8', 'B': '#59c0ff', 'C': '#ff4d6d' };
   const rankNames = {
-    'S': 'RANK S · ผู้พิทักษ์อวกาศไร้ที่ติ',
-    'A': 'RANK A · ภารกิจคุ้มกันยอดเยี่ยม',
+    'S': 'RANK S · สุดยอดทีมผู้พิทักษ์อวกาศไร้ที่ติ',
+    'A': 'RANK A · ภารกิจคุ้มกันยานยอดเยี่ยม',
     'B': 'RANK B · ภารกิจสำเร็จลุล่วง',
     'C': 'RANK C · โหมดฉุกเฉิน / ผ่านการทดสอบ',
   };
@@ -353,20 +394,22 @@ sock.on('round_end', d => {
     `<div class="cert-badge" style="border-color:${rankColors[rank] || '#59c0ff'}; color:${rankColors[rank] || '#59c0ff'}">` +
     `<span class="cert-rank">${rank}</span>` +
     `<div class="cert-title">${rankNames[rank]}</div>` +
-    `<div class="cert-sub">THAILAND CE-7 MOONSHOT GROUND OBSERVER</div>` +
+    `<div class="cert-sub">THAILAND CE-7 MOONSHOT · CREW CERTIFICATE</div>` +
     `</div>` +
     `<div style="margin-top:1.2vh;font-size:calc(3.4*var(--u));">` +
-    `สอยได้ <b>${mine.kills || 0}</b> ดวง · เกราะยานคงเหลือ <b>${d.shipHp || 0}/200 HP</b>` +
-    (mine.rank ? ` · อันดับ <b>#${mine.rank}</b>` : '') +
+    `ทีมสอยได้ทั้งหมด <b>${d.teamKills || d.kills || 0}</b> ดวง · เกราะยาน <b>${d.shipHp || 0}/200 HP</b>` +
+    (d.teamRank ? ` · อันดับบอร์ด <b>#${d.teamRank}</b>` : '') +
     `</div>`;
 
   const sb = $('sum-board');
   if (sb) {
-    sb.innerHTML = (d.results || []).map((r, n) =>
-      `<div class="s-row${r.slot === S.slot ? ' me' : ''}">` +
-      `<div class="nm">${n + 1}. ${escapeHtml(r.name || '?')}` +
-      `${r.isAdmin ? ' <span class="tag">ผู้ดูแล</span>' : ''}</div>` +
-      `<div class="ct">${(r.score || 0).toLocaleString('en-US')}</div></div>`).join('');
+    sb.innerHTML = (d.results || []).map((r, n) => {
+      const isPilot = r.role === 'spaceship';
+      return `<div class="s-row">` +
+        `<div class="nm">${n + 1}. ${escapeHtml(r.name || '?')} ` +
+        `<span class="tag ${isPilot ? 'pilot-tag' : ''}">${isPilot ? '🚀 PILOT' : '📡 GROUND'}</span></div>` +
+        `<div class="ct">${r.kills || 0} ดวง (Combo ×${r.bestCombo || 1})</div></div>`;
+    }).join('');
   }
 
   const rows = contactLog.catches();
@@ -422,6 +465,25 @@ $('name').addEventListener('keydown', e => { if (e.key === 'Enter') $('name-go')
 $('name-go').onclick = () => {
   $('name-err').textContent = '';
   sock.emit('set_name', { name: $('name').value });
+};
+
+// ปุ่มเลือก Role ในหน้า Lobby
+$('role-ground').onclick = () => {
+  sock.emit('select_role', { role: 'ground' });
+};
+$('role-spaceship').onclick = () => {
+  sock.emit('select_role', { role: 'spaceship' });
+};
+
+// สกิล Pulse Shield ของคนคุมยาน
+$('pulse-shield-btn').onclick = () => {
+  const now = performance.now();
+  if (now - S.lastShieldPulseAt < 8000) {
+    floatText.add(new THREE.Vector3(0, 1.0, -3), 'SHIELD COOLDOWN...');
+    return;
+  }
+  S.lastShieldPulseAt = now;
+  sock.emit('pulse_shield', {});
 };
 
 $('again').onclick = () => pane('p-lobby');
@@ -585,16 +647,22 @@ function fire() {
   rig.getMuzzle(_mp, _md);
   const { target } = pickTarget();
 
+  // ถ้าเป็นคนคุมยาน (Pilot) เลเซอร์จะยิงแบบ Orbital Beam จากแนวสูง
+  let spawnPos = _mp;
+  if (S.role === 'spaceship' && spaceEnv && spaceEnv.rocket) {
+    spawnPos = spaceEnv.rocket.position.clone();
+  }
+
   if (target) {
     field.predict(target, t, CFG.bullet.travelMs, _end);
-    const shot = tracers.spawn(_mp, _end, CFG.bullet.travelMs, target.id, S.hex);
+    const shot = tracers.spawn(spawnPos, _end, CFG.bullet.travelMs, target.id, S.hex);
     if (shot) shot.fireT = t;
-    sock.emit('player_fire', { targetId: target.id, from: _mp.toArray(), to: _end.toArray(), yaw: look.yaw, pitch: look.pitch });
+    sock.emit('player_fire', { targetId: target.id, from: spawnPos.toArray(), to: _end.toArray(), yaw: look.yaw, pitch: look.pitch });
   } else {
     dirFrom(look.yaw, look.pitch, _aim);
-    _end.copy(_mp).addScaledVector(_aim, CFG.bullet.missSpeed * CFG.bullet.missMs * .001);
-    tracers.spawn(_mp, _end, CFG.bullet.missMs, 0, S.hex);
-    sock.emit('player_fire', { targetId: 0, from: _mp.toArray(), to: _end.toArray(), yaw: look.yaw, pitch: look.pitch });
+    _end.copy(spawnPos).addScaledVector(_aim, CFG.bullet.missSpeed * CFG.bullet.missMs * .001);
+    tracers.spawn(spawnPos, _end, CFG.bullet.missMs, 0, S.hex);
+    sock.emit('player_fire', { targetId: 0, from: spawnPos.toArray(), to: _end.toArray(), yaw: look.yaw, pitch: look.pitch });
   }
 }
 
@@ -689,7 +757,7 @@ function paintHud(leftMs) {
   cl.textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
   cl.classList.toggle('low', s <= 20);
   const c = $('combo');
-  c.textContent = `COMBO ×${S.combo}`;
+  c.textContent = `TEAM COMBO ×${S.combo}`;
   c.classList.toggle('on', S.combo >= 2);
   paintShipHp();
 }

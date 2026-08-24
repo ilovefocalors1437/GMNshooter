@@ -52,8 +52,9 @@ class Player:
         self.last_seen = 0.0
         self.kills = 0
         self.shots = 0
+        self.role = "ground"             # "ground" (ภาคพื้น) | "spaceship" (ผู้ควบคุมยาน)
 
-        # ── ของใครของมัน ──
+        # ── สถิติส่วนตัว ──
         self.score = 0
         self.combo = 0
         self.best_combo = 0
@@ -86,6 +87,7 @@ class Player:
 
     def public(self):
         return {"slot": self.slot, "name": self.display, "named": self.named,
+                "role": self.role,
                 "color": self.color, "en": self.en, "hex": self.hex,
                 "rgb": self.rgb, "taken": self.taken, "connected": self.connected,
                 "kills": self.kills, "shots": self.shots,
@@ -94,13 +96,12 @@ class Player:
 
 
 class Room:
-    """หนึ่งห้อง = หนึ่งสนาม ทุกคนในนี้เห็นอุกกาบาตชุดเดียวกันและแย่งกันยิง"""
+    """หนึ่งห้อง = หนึ่งทีม ทุกคนช่วยกันยิงสะเก็ดดาวสะสม Team Score ร่วมกัน"""
 
     def __init__(self, code):
         self.lock = threading.RLock()
         self.code = code
         self.created = time.time()
-        # สร้างทีละคนตอนมีคนเข้า ไม่ได้จองไว้ล่วงหน้า — จำนวนคนไม่ตายตัวแล้ว
         self.players = []
         self.by_token = {}
 
@@ -116,10 +117,15 @@ class Room:
         self.start_ms = 0.0
         self.end_ms = 0.0
 
-        self.kills = 0                   # ผลรวมของทั้งห้อง (คะแนนอยู่ที่ตัว Player)
-        self.last_board = None           # ผลที่เพิ่งส่งขึ้น leaderboard
-        self.storm_total = 0             # จำนวนดวงในเฟสพายุทั้งหมด
-        self.storm_hits = 0              # สอยได้กี่ดวงในเฟสพายุ
+        # ── คะแนนรายทีม (Team Score & Combo) ──
+        self.team_score = 0
+        self.team_combo = 0
+        self.team_best_combo = 0
+        self.team_last_kill_ms = -1e9
+        self.kills = 0                   # ผลรวมของทั้งทีม
+        self.last_board = None
+        self.storm_total = 0
+        self.storm_hits = 0
         self.damage = {}                 # meteorId -> โดนยิงไปกี่นัดแล้ว
 
         # ── QTE ปิดท้ายรอบ ──
@@ -210,12 +216,45 @@ class Room:
         return [p for p in self.active() if not p.named]
 
     def total_score(self):
-        """ผลรวมของทุกคน — ใช้โชว์บนแผง admin เฉยๆ ไม่ได้ใช้ตัดสินอันดับ"""
+        """คะแนนรวมของทั้งทีม"""
         with self.lock:
-            return sum(p.score for p in self.players)
+            return self.team_score
 
     def connected_count(self):
         return sum(1 for p in self.players if p.connected)
+
+    def set_player_role(self, sid, role):
+        """กำหนดหน้าที่: 'ground' (ภาคพื้น) หรือ 'spaceship' (ผู้ควบคุมยาน จำกัด 1 คน)"""
+        with self.lock:
+            p = self.player_of_sid(sid)
+            if not p:
+                return None
+            if role == "spaceship":
+                for other in self.players:
+                    if other.role == "spaceship" and other != p:
+                        other.role = "ground"
+                p.role = "spaceship"
+            else:
+                p.role = "ground"
+            return p
+
+    def pulse_shield(self, sid):
+        """ผู้ควบคุมยานเปิดใช้งาน Energy Pulse ฟื้นฟูเกราะยาน +15 HP"""
+        with self.lock:
+            p = self.player_of_sid(sid)
+            if not p or p.role != "spaceship" or self.state not in ("playing", "qte"):
+                return None
+            heal = 15
+            self.ship_hp = min(self.ship_max_hp, self.ship_hp + heal)
+            return {
+                "kind": "shield_pulse",
+                "slot": p.slot,
+                "name": p.display,
+                "hex": p.hex,
+                "heal": heal,
+                "shipHp": self.ship_hp,
+                "shipMaxHp": self.ship_max_hp,
+            }
 
     def empty_for(self, seconds):
         """ห้างร้างมานานพอจะเก็บทิ้งหรือยัง"""
@@ -234,6 +273,10 @@ class Room:
             self.destroyed = {}
             self.missed = set()
             self.ship_hp = C.SHIP_MAX_HP
+            self.team_score = 0
+            self.team_combo = 0
+            self.team_best_combo = 0
+            self.team_last_kill_ms = -1e9
             self.kills = 0
             self.last_board = None
             self.storm_total = 0
@@ -244,6 +287,12 @@ class Room:
             self._qte_last_tap = {}
             self.qte_start_ms = 0.0
             self.qte_end_ms = 0.0
+
+            # ถ้ายังไม่มีใครเลือกควบคุมยาน ให้คนแรกเป็นคนควบคุมยานอัตโนมัติ
+            active_p = self.active()
+            if active_p and not any(p.role == "spaceship" for p in active_p):
+                active_p[0].role = "spaceship"
+
             for p in self.players:
                 p.reset_round()
 
@@ -475,16 +524,20 @@ class Room:
 
             self.destroyed[meteor_id] = p.slot
 
-            # คอมโบเป็นสายของใครของมัน — ยิงรัวเองถึงจะต่อสาย
-            # เพื่อนยิงโดนไม่ได้ต่อสายให้เรา (เดิมคอมโบเป็นของห้อง คนที่นั่งเฉยๆ ก็ได้ตัวคูณ)
+            # คะแนนและคอมโบรวมของทั้งทีม (Team Score & Team Combo)
             t = now_ms()
-            if t - p.last_kill_ms > C.COMBO_WINDOW_MS:
-                p.combo = 0
-            p.combo = min(C.COMBO_MAX, p.combo + 1)
+            if t - self.team_last_kill_ms > C.COMBO_WINDOW_MS:
+                self.team_combo = 0
+            self.team_combo = min(C.COMBO_MAX, self.team_combo + 1)
+            self.team_best_combo = max(self.team_best_combo, self.team_combo)
+            self.team_last_kill_ms = t
+
+            p.combo = self.team_combo
             p.best_combo = max(p.best_combo, p.combo)
             p.last_kill_ms = t
 
-            gained = C.SCORE_PER_HIT * p.combo
+            gained = C.SCORE_PER_HIT * self.team_combo
+            self.team_score += gained
             p.score += gained
             p.kills += 1
             self.kills += 1
@@ -498,8 +551,9 @@ class Room:
                 self.storm_hits += 1
 
             return {"kind": "destroyed", "meteorId": meteor_id, "slot": p.slot, "hex": p.hex,
-                    "name": p.display,
-                    "gained": gained, "score": p.score, "combo": p.combo,
+                    "name": p.display, "role": p.role,
+                    "gained": gained, "score": self.team_score, "teamScore": self.team_score,
+                    "combo": self.team_combo, "teamCombo": self.team_combo,
                     "kills": p.kills, "roomKills": self.kills,
                     "shipHp": self.ship_hp, "shipMaxHp": self.ship_max_hp,
                     "stormHits": self.storm_hits, "stormTotal": self.storm_total}
@@ -559,9 +613,6 @@ class Room:
     def to_lobby(self):
         """
         จบรอบแล้วกลับไปรอรอบใหม่ — ห้องเดิม รหัสเดิม เด็กชุดใหม่เข้าได้เลย
-
-        ต้องตัดคนที่ออกไปแล้วทิ้งด้วย ไม่งั้นกลุ่มถัดไปที่มาเล่นจะเจอชื่อคนกลุ่มก่อน
-        ค้างอยู่บนจอโดยไม่มีใครตั้งใจ (เจอตอนเทสจริง)
         """
         with self.lock:
             self.state = "lobby"
@@ -569,6 +620,10 @@ class Room:
             self.destroyed = {}
             self.missed = set()
             self.ship_hp = C.SHIP_MAX_HP
+            self.team_score = 0
+            self.team_combo = 0
+            self.team_best_combo = 0
+            self.team_last_kill_ms = -1e9
             self.damage = {}
             self.ended_ms = 0.0
             self.kills = 0
@@ -624,7 +679,10 @@ class Room:
                 "stormStartSec": C.STORM_START_SEC, "stormPassRate": C.STORM_PASS_RATE,
                 "roundId": self.round_id,
                 "players": [p.public() for p in self.players],
-                "totalScore": self.total_score(), "kills": self.kills,
+                "totalScore": self.total_score(),
+                "teamScore": self.team_score,
+                "teamCombo": self.team_combo,
+                "kills": self.kills,
                 "timeLeftMs": round(self.time_left_ms()),
                 "qteLeftMs": round(self.qte_left_ms()),
                 "qteHits": self.qte_hits, "qteNeed": self.qte_need,

@@ -90,17 +90,10 @@ def _migrate(c):
               f"แล้วเริ่มบอร์ดรายบุคคลใหม่", flush=True)
 
 
-def submit_round(entries, storm_mult, bonus, storm_passed, qte_passed):
+def submit_round(entries, storm_mult, bonus, storm_passed, qte_passed, team_score=None, team_kills=None, team_best_combo=None, code=""):
     """
-    บันทึกผลรอบ — **แถวละคน**  คืน list ของ dict เรียงตาม entries ที่ส่งเข้ามา
-
-    entries = [{"name":…, "raw":…, "kills":…, "bestCombo":…, "isAdmin":…, "slot":…}, …]
-
-    ตัวคูณพายุกับโบนัส QTE เป็นผลของ *ทั้งห้อง* แต่เอามาคิดกับคะแนนของแต่ละคน
-    — event พิเศษเลยยังต้องช่วยกันเหมือนเดิม ใครทิ้งทีมก็เสียประโยชน์ตัวเองด้วย
-    โบนัส QTE บวก *หลัง* คูณพายุ คนที่พลาดพายุแต่รุมลูกไฟดวงสุดท้ายได้ต้องได้เต็ม
+    บันทึกผลรอบ — **1 แถวต่อ 1 ทีม** (Team Score Leaderboard)
     """
-    out = []
     with _lock:
         c = _conn()
         ts = time.time()
@@ -108,27 +101,58 @@ def submit_round(entries, storm_mult, bonus, storm_passed, qte_passed):
                         (len(entries), ts))
         round_no = c.execute("SELECT COUNT(*) FROM rounds").fetchone()[0]
 
-        for e in entries:
-            raw = int(e.get("raw", 0))
-            final = int(round(raw * storm_mult)) + int(bonus)
-            cur = c.execute(
-                "INSERT INTO scores (name, score, raw_score, kills, best_combo,"
-                " storm_passed, qte_passed, is_admin, round_no, ts)"
-                " VALUES (?,?,?,?,?,?,?,?,?,?)",
-                (e.get("name") or "?", final, raw, int(e.get("kills", 0)),
-                 int(e.get("bestCombo", 0)), 1 if storm_passed else 0,
-                 1 if qte_passed else 0, 1 if e.get("isAdmin") else 0,
-                 round_no, ts))
-            out.append({"id": cur.lastrowid, "slot": e.get("slot"),
-                        "name": e.get("name"), "score": final, "rawScore": raw})
+        if team_score is None:
+            team_score = sum(int(e.get("raw", 0)) for e in entries)
+        raw = int(team_score)
+        final = int(round(raw * storm_mult)) + int(bonus)
+
+        kills = int(team_kills if team_kills is not None else sum(int(e.get("kills", 0)) for e in entries))
+        best_combo = int(team_best_combo if team_best_combo is not None else max([int(e.get("bestCombo", 0)) for e in entries] + [0]))
+
+        member_names = [e.get("name") or "?" for e in entries if e.get("name")]
+        team_label = f"ทีม {code}" if code else "ทีมผู้พิทักษ์"
+        if member_names:
+            team_label += f" ({', '.join(member_names)})"
+
+        is_admin_team = any(e.get("isAdmin") for e in entries)
+
+        cur = c.execute(
+            "INSERT INTO scores (name, score, raw_score, kills, best_combo,"
+            " storm_passed, qte_passed, is_admin, round_no, ts)"
+            " VALUES (?,?,?,?,?,?,?,?,?,?)",
+            (team_label, final, raw, kills, best_combo,
+             1 if storm_passed else 0, 1 if qte_passed else 0,
+             1 if is_admin_team else 0, round_no, ts))
+        row_id = cur.lastrowid
         c.commit()
 
-        # อันดับคิดหลัง insert ครบทุกคน ไม่งั้นคนแรกในลูปจะเห็นบอร์ดที่ยังไม่ครบรอบตัวเอง
-        for r in out:
-            r["rank"] = c.execute(
-                "SELECT COUNT(*)+1 FROM scores WHERE score > ?", (r["score"],)).fetchone()[0]
+        rank = c.execute(
+            "SELECT COUNT(*)+1 FROM scores WHERE score > ?", (final,)).fetchone()[0]
         _export_json()
-    return out
+
+        player_rows = []
+        for e in entries:
+            player_rows.append({
+                "slot": e.get("slot"),
+                "name": e.get("name"),
+                "role": e.get("role", "ground"),
+                "score": final,
+                "rawScore": raw,
+                "kills": int(e.get("kills", 0)),
+                "bestCombo": int(e.get("bestCombo", 0)),
+                "rank": rank,
+            })
+
+        return {
+            "teamRowId": row_id,
+            "teamName": team_label,
+            "teamScore": final,
+            "teamRawScore": raw,
+            "teamKills": kills,
+            "teamBestCombo": best_combo,
+            "teamRank": rank,
+            "players": player_rows,
+        }
 
 
 def top(n=10):
