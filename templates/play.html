@@ -420,10 +420,18 @@
                          font-variant-numeric:tabular-nums; }
   #p-sum .btn { margin-top:3.6vh; }
   .pilot-tag { color:var(--accent); font-weight:700; }
+
+  body.spectator #fire   { display:none !important; }
+  body.spectator #cross  { opacity:.25; }
+  body.spectator #clock  { display:block; font-size:calc(3.4 * var(--u)); opacity:.8; }
+  body.spectator .credit { font-size:calc(1.6 * var(--u)); }
+  body.spectator #cards  { width:calc(36 * var(--u)); font-size:.9em; }
+  body.spectator #teamscore { font-size:calc(3.2 * var(--u)); }
+  .tag { font-size:.75em; opacity:.85; padding:calc(.3*var(--u)) calc(1*var(--u)); border-radius:calc(.8*var(--u)); background:rgba(255,255,255,.1); }
+
 </style>
 </head>
 <body>
-
 <div id="scene"></div>
 
 <!-- 0. หน้าแรก -->
@@ -637,15 +645,6 @@
   <button class="btn ghost" id="to-admin" style="display:none">กลับแผงควบคุม</button>
 </div>
 
-<style>
-  body.spectator #fire   { display:none !important; }
-  body.spectator #cross  { opacity:.25; }
-  body.spectator #clock  { display:block; font-size:calc(3.4 * var(--u)); opacity:.8; }
-  body.spectator .credit { font-size:calc(1.6 * var(--u)); }
-  body.spectator #cards  { width:calc(36 * var(--u)); font-size:.9em; }
-  body.spectator #teamscore { font-size:calc(3.2 * var(--u)); }
-  .tag { font-size:.75em; opacity:.85; padding:calc(.3*var(--u)) calc(1*var(--u)); border-radius:calc(.8*var(--u)); background:rgba(255,255,255,.1); }
-</style>
 <div class="credit">Meteor Data: Global Meteor Network (CC BY 4.0) · Mission Lore: NARIT Thailand Moonshot</div>
 <div id="err"></div>
 
@@ -653,8 +652,7 @@
 <script src="/static/vendor/NoSleep.min.js"></script>
 <script type="module">
   const box = document.getElementById('err');
-  const show = m => { box.style.display='block'; box.textContent += m + '
-'; };
+  const show = m => { box.style.display='block'; box.textContent += m + '\n'; };
   window.addEventListener('error', e => {
     if (e.filename && e.filename.indexOf(location.origin) !== 0) return;
     show('ERROR: ' + e.message);
@@ -666,5 +664,6 @@
   });
   import('/src/mobile-main.js').catch(e => show('LOAD: ' + (e && e.message)));
 </script>
+
 </body>
 </html>
