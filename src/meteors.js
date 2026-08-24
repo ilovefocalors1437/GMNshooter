@@ -336,7 +336,7 @@ export class MeteorField {
       // หยุดเดินทางตอนไหม้หมด — ค้างจุดนั้นแล้วจางหาย ไม่ร่วงต่อลงพื้น
       getPosition(m, Math.min(now, m.tBurn), m.position);
       m.telegraph = now < m.tHittable;
-      m.hittable = !m.telegraph && now < m.tBurn;
+      m.hittable = m.alive && now < m.tBurn;
 
       if (now >= m.tBurn) {
         if (!m.burning) { m.burning = true; out.push(m); }   // burnedOut ครั้งเดียว

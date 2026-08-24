@@ -893,20 +893,42 @@ class Tracers {
 }
 const tracers = new Tracers(scene);
 
-// ══ เล็ง + ยิง ════════════════════════════════════════════
+// ══ เล็ง + ยิง (Crosshair Center Ray + Aim Assist) ════════════
+const _vCamDir = new THREE.Vector3();
+const _toMeteor = new THREE.Vector3();
 const _a = {};
+
 function pickTarget() {
-  const cone = CFG.assist.lockOnDeg * DEG;
+  const cone = (CFG.assist.lockOnDeg || 12.0) * DEG;
   let best = null, bestScore = Infinity;
+  const camPos = camera.position;
+  camera.getWorldDirection(_vCamDir);
+
   for (const m of field.active) {
-    if (!m.hittable || S.destroyed.has(m.id)) continue;
-    const a = anglesTo(camera.position, m.position, _a);
-    const ang = Math.hypot(angleDelta(a.yaw, look.yaw), a.pitch - look.pitch);
-    const ar = m.radius ? Math.atan(m.radius / Math.max(1, a.dist)) : 0;
-    const limit = Math.max(cone, ar);
-    if (ang > limit) continue;
-    const sc = ang / limit;
-    if (sc < bestScore) { bestScore = sc; best = m; }
+    if (!m.alive || S.destroyed.has(m.id)) continue;
+
+    // เวกเตอร์จากตำแหน่งกล้องไปยังอุกกาบาต
+    _toMeteor.subVectors(m.position, camPos);
+    const dist = _toMeteor.length();
+    if (dist < 0.5) continue;
+    _toMeteor.divideScalar(dist);
+
+    // มุมระหว่างทิศทางการมองของกล้อง (Crosshair) กับทิศทางไปยังอุกกาบาต
+    const dot = clamp(_vCamDir.dot(_toMeteor), -1, 1);
+    const ang = Math.acos(dot);
+
+    // รัศมีเชิงมุมของอุกกาบาต + กรวย Aim Assist
+    const meteorRad = m.radius || 3.5;
+    const angularRadius = Math.atan((meteorRad * 2.5) / dist);
+    const limit = Math.max(cone, angularRadius);
+
+    if (ang <= limit) {
+      const sc = ang / limit;
+      if (sc < bestScore) {
+        bestScore = sc;
+        best = m;
+      }
+    }
   }
   return { target: best, err: best ? bestScore : 1 };
 }
@@ -943,7 +965,7 @@ function fire() {
     if (shot) shot.fireT = t;
     sock.emit('player_fire', { targetId: target.id, from: spawnPos.toArray(), to: _end.toArray(), yaw: look.yaw, pitch: look.pitch });
   } else {
-    dirFrom(look.yaw, look.pitch, _aim);
+    camera.getWorldDirection(_aim);
     _end.copy(spawnPos).addScaledVector(_aim, CFG.bullet.missSpeed * CFG.bullet.missMs * .001);
     tracers.spawn(spawnPos, _end, CFG.bullet.missMs, 0, S.hex);
     sock.emit('player_fire', { targetId: 0, from: spawnPos.toArray(), to: _end.toArray(), yaw: look.yaw, pitch: look.pitch });
@@ -953,7 +975,6 @@ function fire() {
 function onArrive(it, pos) {
   if (!it.targetId || !S.playing || S.qteOn) return;
   if (S.destroyed.has(it.targetId)) return;
-  if (!field.byId(it.targetId)) return;
   sock.emit('kill', { meteorId: it.targetId });
 }
 

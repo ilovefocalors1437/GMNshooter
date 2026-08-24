@@ -321,15 +321,16 @@ class Room:
         rng = random.Random(self.seed)
         n_players = max(1, len(self.active()))
 
-        # spawnRate สเกลตามจำนวนคน → งานต่อหัวเท่ากันไม่ว่าทีมใหญ่หรือเล็ก
-        rate = C.SPAWN_RATE_PER_MIN * n_players
+        # spawnRate สเกลตามจำนวนคนแบบสมดุล เพื่อให้ทุกคนมีสะเก็ดดาวยิง โดยไม่ล้นจอ
+        effective_players = min(6.0, 1.0 + (n_players - 1) * 0.35)
+        rate = C.SPAWN_RATE_PER_MIN * effective_players
 
         out = []
         mid = 1
 
         # ── เฟสปกติ ──
         norm_sec = C.STORM_START_SEC
-        n_norm = max(1, int(norm_sec / 60.0 * rate * C.SCHEDULE_MARGIN))
+        n_norm = max(12, int(norm_sec / 60.0 * rate * C.SCHEDULE_MARGIN))
         gap = norm_sec * 1000.0 / n_norm
         for i, ev in enumerate(gmn_db.pick(n_norm)):
             t0 = max(0.0, i * gap + (rng.random() - 0.5) * gap * C.SPAWN_JITTER)
@@ -340,7 +341,7 @@ class Room:
 
         # ── เฟสพายุ ──
         storm_sec = C.STORM_END_SEC - C.STORM_START_SEC
-        n_storm = max(1, C.STORM_METEORS_PER_PLAYER * n_players)
+        n_storm = max(16, int(C.STORM_METEORS_PER_PLAYER * effective_players))
         gap = storm_sec * 1000.0 / n_storm
         storm_where = f"duration IS NOT NULL AND duration <= {C.STORM_MAX_DURATION}"
         for i, ev in enumerate(_fill(gmn_db.pick(n_storm, where=storm_where), n_storm)):
