@@ -27,7 +27,7 @@ from game import db as gmn_db
 from game import board
 from game.clock import now_ms
 from game.rooms import Rooms
-from game.words import clean_team_name
+from game.words import clean_player_name
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 
@@ -131,11 +131,11 @@ def page_admin():
 
 @app.route("/api/leaderboard")
 def api_board():
-    """2 บอร์ดแยกกันเด็ดขาด — รอบที่ admin เล่นห้ามปนกับทีมเด็ก"""
+    """บอร์ดเดียวรายบุคคล — admin กับเด็กอยู่ตารางเดียวกัน แข่งกันตรงๆ"""
     return jsonify({
-        "teams": board.top(10, is_admin=False),
-        "admin": board.top(10, is_admin=True),
+        "scores": board.top(20),
         "total": board.total_rounds(),
+        "entries": board.total_entries(),
     })
 
 
@@ -220,7 +220,6 @@ def on_admin_hello(data=None):
     join_room(room.code)
     socketio.emit("admin_hello", {
         "ok": True, "code": room.code,
-        "adminCode": rooms.admin_room().code,
         "meteors": gmn_db.count() if gmn_db.available() else 0,
     }, to=request.sid)
     _emit_room(room)
@@ -267,7 +266,7 @@ def on_spectate(data=None):
     room.watch(request.sid)
     join_room(room.code)
     socketio.emit("spectating", {
-        "code": room.code, "team": room.team, "serverMs": now_ms(),
+        "code": room.code, "serverMs": now_ms(),
     }, to=request.sid)
     if room.state in ("countdown", "playing", "qte"):
         socketio.emit("round_start", _round_payload(room), to=request.sid)
@@ -288,9 +287,13 @@ def on_join(data=None):
 
     token = d.get("token") or None
     known = token and token in room.by_token
+    # จอ admin ที่สับมาเล่นเต็มจอ — ส่งรหัส admin มาด้วย
+    # ตั้งแต่ 2026-08-24 admin เล่นห้องเดียวกับเด็ก แย่งอุกกาบาตชุดเดียวกันจริงๆ
+    # จึงต้องเข้าห้องได้แม้รอบเพิ่งเริ่ม (มี countdown 3 วิ ทันพอดี ไม่เสียเวลาเล่น)
+    as_admin = d.get("pw") == C.ADMIN_PASSWORD
 
     # เข้าระหว่างรอบไม่ได้ ยกเว้นคนเดิมที่หลุดแล้วกลับมา (เวลาไม่หยุดเดินให้)
-    if room.state in ("countdown", "playing", "qte") and not known:
+    if room.state in ("countdown", "playing", "qte") and not known and not as_admin:
         socketio.emit("join_failed", {
             "reason": "in_progress", "msg": "รอบนี้เริ่มไปแล้ว รอรอบหน้านะ",
             "timeLeftMs": round(room.time_left_ms())}, to=request.sid)
@@ -302,11 +305,19 @@ def on_join(data=None):
                                       "msg": f"ห้องนี้เต็มแล้ว ({C.MAX_SLOTS} คน)"}, to=request.sid)
         return
 
+    if as_admin:
+        # ชื่อตายตัว ไม่ต้องพิมพ์ และเด็กตั้งชื่อชนไม่ได้ (กันไว้ที่ clean_player_name)
+        with room.lock:
+            p.is_admin = True
+            p.name = C.ADMIN_NAME
+
     join_room(room.code)
     socketio.emit("joined", {
-        "token": tok, "slot": p.slot, "name": p.name, "en": p.en, "hex": p.hex,
-        "rgb": p.rgb, "rejoin": not is_new, "code": room.code,
-        "team": room.team, "needTeamName": room.team is None,
+        "token": tok, "slot": p.slot, "name": p.display, "color": p.color,
+        "en": p.en, "hex": p.hex, "rgb": p.rgb, "rejoin": not is_new,
+        "code": room.code, "isAdmin": p.is_admin,
+        "needName": not p.named,        # ยังไม่พิมพ์ชื่อ = ต้องถามก่อนถึงจะเริ่มได้
+        "nameMin": C.NAME_MIN, "nameMax": C.NAME_MAX,
         "serverMs": now_ms(),
     }, to=request.sid)
 
@@ -317,38 +328,39 @@ def on_join(data=None):
     _emit_room(room)
 
 
-@socketio.on("set_team")
+@socketio.on("set_name")
 @safe
-def on_set_team(data=None):
-    """คนแรกที่เข้าห้องเป็นคนตั้งชื่อทีม คนที่ 2-3 ไม่ต้องกรอกอะไร (spec §3)"""
+def on_set_name(data=None):
+    """
+    ทุกคนพิมพ์ชื่อของตัวเอง — ชื่อนี้คือชื่อที่จะขึ้น leaderboard
+
+    เดิมคนแรกตั้งชื่อ *ทีม* แล้วคนอื่นไม่ต้องกรอกอะไร
+    เปลี่ยนเมื่อ 2026-08-24: บอร์ดเป็นรายบุคคล ถ้าไม่มีชื่อของตัวเอง
+    บอร์ดจะเต็มไปด้วย "แดง" ซ้ำกันหลายสิบแถวจากคนละกลุ่ม แยกไม่ออกเลย
+    """
     room = rooms.room_of_sid(request.sid)
     if room is None:
         return
-    if room.team is not None:
-        socketio.emit("team_set", {"team": room.team}, to=request.sid)
+    me = room.player_of_sid(request.sid)
+    if me is None:
+        return
+    if me.is_admin:                       # admin ใช้ชื่อตายตัว ห้ามเปลี่ยน
+        socketio.emit("name_set", {"name": me.name, "slot": me.slot}, to=request.sid)
         return
 
-    name, err = clean_team_name((data or {}).get("name"),
-                                C.TEAM_NAME_MIN, C.TEAM_NAME_MAX)
+    name, err = clean_player_name((data or {}).get("name"),
+                                  C.NAME_MIN, C.NAME_MAX, reserved=(C.ADMIN_NAME,))
     if err:
-        socketio.emit("team_rejected", {"msg": err}, to=request.sid)
+        socketio.emit("name_rejected", {"msg": err}, to=request.sid)
+        return
+    if room.name_taken(name, exclude=me):
+        socketio.emit("name_rejected",
+                      {"msg": "ชื่อนี้มีคนใช้ในห้องแล้ว ใช้ชื่ออื่นนะ"}, to=request.sid)
         return
 
-    with room.lock:
-        room.team = _unique_team_name(name)
-    socketio.emit("team_set", {"team": room.team}, to=request.sid)
+    room.set_name(request.sid, name)
+    socketio.emit("name_set", {"name": name, "slot": me.slot}, to=request.sid)
     _emit_room(room)
-
-
-def _unique_team_name(name):
-    """ชื่อซ้ำ → ต่อเลข HARMONY, HARMONY2 (spec §3)"""
-    existing = {r.team for r in rooms.all() if r.team}
-    if name not in existing:
-        return name
-    i = 2
-    while f"{name}{i}" in existing:
-        i += 1
-    return f"{name}{i}"
 
 
 @socketio.on("start_round")
@@ -391,45 +403,41 @@ def on_admin_start(data=None):
     if not _begin(room, request.sid):
         return
 
-    # กดเริ่มแล้ว admin สับไปเล่นเต็มจอด้วย — แต่อยู่ห้องของตัวเอง
-    # เหตุผลที่ต้องแยกห้อง: ถ้า admin ลงเล่นห้องเดียวกับเด็ก
-    # มันจะแย่งอุกกาบาตจากเด็ก และคะแนนจะปนกับคะแนนทีม
-    ar = rooms.admin_room()
-    if ar is not None and ar.state not in ("countdown", "playing", "qte"):
-        with ar.lock:
-            ar.team = C.ADMIN_TEAM_NAME
-    socketio.emit("admin_play", {"code": ar.code if ar else None,
-                                 "roomCode": room.code}, to=request.sid)
+    # กดเริ่มแล้ว admin สับไปเล่นเต็มจอ — **ห้องเดียวกับเด็ก**
+    # เปลี่ยนเมื่อ 2026-08-24 ตามที่เจ้าของงานสั่ง: ทุกคนอยู่สนามเดียวกัน
+    # แย่งอุกกาบาตชุดเดียวกันจริงๆ คะแนนแยกเป็นรายคนอยู่แล้วเลยไม่ปนกัน
+    socketio.emit("admin_play", {"code": room.code, "roomCode": room.code},
+                  to=request.sid)
 
 
 @socketio.on("admin_room_start")
 @safe
 def on_admin_room_start(data=None):
     """
-    หน้า /play?admin=1 เรียกเองหลัง join ห้อง admin สำเร็จ
+    หน้า /play?admin=1 เรียกเองหลัง join ห้องสำเร็จ
 
-    ต้องรอให้ join ก่อน — _begin ต้องการห้องที่มีผู้เล่นจริงอย่างน้อยหนึ่งคน
+    ปกติ admin_start เริ่มรอบไปแล้ว ตัวนี้เลยเป็นแค่ตาข่ายกันพลาด:
+    ถ้าจอ admin โหลดช้าจนรอบยังไม่เริ่ม กดตรงนี้ก็เริ่มได้เหมือนกัน
     """
     if (data or {}).get("pw") != C.ADMIN_PASSWORD:
         socketio.emit("error_msg", {"msg": "รหัส admin ไม่ถูก"}, to=request.sid)
         return
     room = rooms.room_of_sid(request.sid)
-    if room is None or not room.is_admin_room:
+    if room is None:
         return
-    if room.team is None:
-        with room.lock:
-            room.team = C.ADMIN_TEAM_NAME
+    if room.state in ("countdown", "playing", "qte"):
+        return                              # เริ่มไปแล้ว ไม่ต้องทำอะไร
     _begin(room, request.sid)
 
 
 @socketio.on("admin_solo")
 @safe
 def on_admin_solo(data=None):
-    """admin อยากลงไปเล่นเอง — ห้องแยก คะแนนลงบอร์ด ADMIN ไม่ปนกับเด็ก"""
+    """admin อยากลงไปเล่นเอง — ห้องเดียวกับเด็ก คะแนนแยกเป็นรายคนอยู่แล้ว"""
     if (data or {}).get("pw") != C.ADMIN_PASSWORD:
         socketio.emit("error_msg", {"msg": "รหัส admin ไม่ถูก"}, to=request.sid)
         return
-    r = rooms.admin_room()
+    r = rooms.primary()
     socketio.emit("admin_solo", {"code": r.code if r else None}, to=request.sid)
 
 
@@ -437,11 +445,15 @@ def _begin(room, who_sid):
     """คืน True ถ้ารอบเริ่มจริง — จอ admin ใช้ตัดสินว่าจะสลับไปเต็มจอดีหรือยัง"""
     if room.state in ("countdown", "playing", "qte"):
         return False
-    if room.team is None:
-        socketio.emit("error_msg", {"msg": "ยังไม่มีใครตั้งชื่อทีม"}, to=who_sid)
-        return False
     if not room.active():
         socketio.emit("error_msg", {"msg": "ยังไม่มีผู้เล่นในห้อง"}, to=who_sid)
+        return False
+    # บอร์ดเป็นรายบุคคล — ใครยังไม่พิมพ์ชื่อก็ไม่รู้จะบันทึกคะแนนในชื่ออะไร
+    missing = room.unnamed()
+    if missing:
+        socketio.emit("error_msg", {
+            "msg": "ยังมีคนไม่ได้ตั้งชื่อ: " + ", ".join(p.color for p in missing),
+        }, to=who_sid)
         return False
 
     # ── ประตูข้อมูล ────────────────────────────────────────
@@ -489,7 +501,7 @@ def _round_payload(room):
             "stormMinScale": C.STORM_MIN_SCALE,
             "schedule": room.schedule,          # ตารางทั้งรอบ ส่งครั้งเดียว
             "destroyed": list(room.destroyed.keys()),
-            "team": room.team,
+            "players": [p.public() for p in room.active()],
         }
 
 
@@ -598,7 +610,10 @@ def _round_watcher():
                 elif room.state == "qte":
                     socketio.emit("tick", {
                         "timeLeftMs": 0, "qteLeftMs": round(room.qte_left_ms()),
-                        "score": room.score, "kills": room.kills, "combo": room.combo,
+                        # คะแนนรายคน — client หยิบ slot ของตัวเองไปขึ้น HUD
+                        "scores": {p.slot: p.score for p in room.active()},
+                        "combos": {p.slot: p.combo for p in room.active()},
+                        "kills": room.kills,
                         "phase": "qte",
                         "qteHits": room.qte_hits, "qteNeed": room.qte_need,
                         "stormHits": room.storm_hits, "stormTotal": room.storm_total,
@@ -606,7 +621,9 @@ def _round_watcher():
                 elif room.state == "playing":
                     socketio.emit("tick", {
                         "timeLeftMs": round(room.time_left_ms()),
-                        "score": room.score, "kills": room.kills, "combo": room.combo,
+                        "scores": {p.slot: p.score for p in room.active()},
+                        "combos": {p.slot: p.combo for p in room.active()},
+                        "kills": room.kills,
                         # client ใช้ phase ตัดสินว่าจะซ่อนการ์ด/โชว์ตัวนับพายุเมื่อไร
                         "phase": room.phase(),
                         "stormHits": room.storm_hits, "stormTotal": room.storm_total,
@@ -622,17 +639,41 @@ def _round_watcher():
 
 
 def _finish_round(room):
+    """
+    จบรอบ — บันทึก **แถวละคน** ลง leaderboard เดียวกันทั้ง admin ทั้งเด็ก
+
+    ตัวคูณพายุกับโบนัส QTE เป็นผลของทั้งห้อง แต่เอามาคิดกับคะแนนของแต่ละคน
+    → event พิเศษยังต้องช่วยกันเหมือนเดิม ใครอู้ก็ฉุดคะแนนตัวเองลงด้วย
+    (เปลี่ยนเมื่อ 2026-08-24 — เดิมเป็นแถวละทีม เรียงด้วยคะแนนต่อหัว ดู CLAUDE.md)
+    """
     with room.lock:
         passed, mult, rate = room.storm_result()
         qte_passed, qte_bonus, qte_rate = room.qte_result()
-        is_admin = bool(getattr(room, "is_admin_room", False))
-        rid, final, rank = board.submit(
-            room.team or "NO NAME", room.score, len(room.active()), room.kills,
-            room.storm_hits, room.storm_total, passed, mult, is_admin,
-            bonus=qte_bonus)
-        room.last_board = {"id": rid, "final": final, "rank": rank}
+        players = room.active()
+
+        results = board.submit_round(
+            [{"name": p.display, "raw": p.score, "kills": p.kills,
+              "bestCombo": p.best_combo, "isAdmin": p.is_admin, "slot": p.slot}
+             for p in players],
+            storm_mult=mult, bonus=qte_bonus,
+            storm_passed=passed, qte_passed=qte_passed)
+
+        by_slot = {r["slot"]: r for r in results}
+        room.last_board = results
+
+        # แต่ละคนต้องเห็นคะแนน *ของตัวเอง* กับอันดับของตัวเอง
+        # เลยส่งผลของทุกคนไปด้วยกัน แล้วให้ client หยิบ slot ตัวเองออกมา
+        me_rows = [{
+            "slot": p.slot, "name": p.display, "color": p.color, "hex": p.hex,
+            "isAdmin": p.is_admin,
+            "rawScore": p.score, "kills": p.kills, "bestCombo": p.best_combo,
+            "score": by_slot.get(p.slot, {}).get("score", 0),
+            "rank": by_slot.get(p.slot, {}).get("rank", 0),
+        } for p in players]
+        me_rows.sort(key=lambda r: r["score"], reverse=True)
+
         summary = {
-            "team": room.team, "rawScore": room.score, "score": final,
+            "results": me_rows,                 # ← ของใครของมัน เรียงมากไปน้อย
             "stormMult": mult, "stormPassed": passed,
             "stormHits": room.storm_hits, "stormTotal": room.storm_total,
             "stormRate": round(rate, 3), "stormPassRate": C.STORM_PASS_RATE,
@@ -640,15 +681,13 @@ def _finish_round(room):
             "qtePassed": qte_passed, "qteBonus": qte_bonus,
             "qteRate": round(qte_rate, 3),
             "qteMeteor": (room.qte_wire or {}).get("gmn"),
-            "kills": room.kills, "bestCombo": room.best_combo,
-            "players": [p.public() for p in room.active()],
-            "playerCount": len(room.active()),
-            "perHead": round(final / max(1, len(room.active()))),
-            "rank": rank, "totalRounds": board.total_rounds(),
+            "kills": room.kills,
+            "players": [p.public() for p in players],
+            "playerCount": len(players),
+            "totalRounds": board.total_rounds(),
             "gmnTotal": gmn_db.count(),
             "gmnCameras": C.GMN_CAMERAS_WORLDWIDE,
-            "isAdmin": is_admin,
-            "top": board.top(10, is_admin),
+            "top": board.top(10),               # บอร์ดเดียว รวม admin ด้วย
         }
     socketio.emit("round_end", summary, to=room.code)
     _emit_room(room)

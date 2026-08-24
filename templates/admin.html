@@ -97,7 +97,7 @@
     <div class="join">ให้ผู้เล่นเปิด <b id="joinurl">—</b> แล้วกด “เข้าร่วมเป็นผู้เล่น”</div>
 
     <div class="status">
-      <div><span>ทีม</span> <b id="team">—</b></div>
+      <div><span>ในสนาม</span> <b id="who">—</b></div>
       <div><span>ผู้เล่น</span> <b id="pcount">0</b> / 5</div>
       <div><span>สถานะ</span> <b id="state">—</b></div>
       <div class="dots" id="dots"></div>
@@ -112,10 +112,8 @@
 
   <!-- 3. leaderboard -->
   <div class="card">
-    <h3>LEADERBOARD — เรียงด้วยคะแนนต่อหัว</h3>
+    <h3>LEADERBOARD — รายบุคคล (รวมผู้ดูแล)</h3>
     <table id="board"></table>
-    <h3 style="margin-top:3vh">ADMIN</h3>
-    <table id="aboard"></table>
   </div>
 
   <div class="foot">
@@ -170,7 +168,8 @@ s.on('error_msg', d => msg(d.msg, true));
 const STATE_TH = { lobby:'รอเริ่ม', countdown:'นับถอยหลัง', playing:'กำลังเล่น',
                    qte:'ลูกไฟดวงสุดท้าย', ended:'จบรอบ' };
 s.on('room', st => {
-  $('team').textContent = st.team || '—';
+  // ชื่อเป็นของรายคนแล้ว โชว์ว่าใครอยู่ในสนามบ้าง
+  $('who').textContent = st.players.filter(p => p.named).map(p => p.name).join(' · ') || '—';
   $('pcount').textContent = st.playerCount;
   $('state').textContent = STATE_TH[st.state] || st.state;
   $('dots').innerHTML = st.players.map(p =>
@@ -179,13 +178,16 @@ s.on('room', st => {
 });
 
 s.on('round_end', d => {
-  msg(`จบรอบ · ${d.team} ได้ ${fmt(d.score)} · อันดับ ${d.rank}`);
+  const top = (d.results || [])[0];
+  msg(top ? `จบรอบ · ที่ 1 คือ ${top.name} ได้ ${fmt(top.score)} (อันดับรวม ${top.rank})`
+          : 'จบรอบ');
   board();
 });
 
 // ── ปุ่มควบคุม ─────────────────────────────────────────────
-// กดเริ่ม → ห้องผู้เล่นเริ่มรอบ แล้ว admin สับไปเล่นเต็มจอในห้องของตัวเอง
-// (คนละห้อง = คะแนนไม่ปนกัน และไม่ไปแย่งอุกกาบาตของเด็ก)
+// กดเริ่ม → รอบเริ่ม แล้ว admin สับไปเล่นเต็มจอ **ในห้องเดียวกับเด็ก**
+// (เปลี่ยน 2026-08-24: ทุกคนอยู่สนามเดียวกัน แย่งอุกกาบาตกันจริง
+//  คะแนนแยกเป็นรายคนอยู่แล้วเลยไม่ปนกัน ดู CLAUDE.md)
 $('start').onclick   = () => { msg('กำลังเริ่ม…'); s.emit('admin_start', { code: CODE, pw: PW }); };
 s.on('admin_play', d => {
   if (!d.code) { msg('เริ่มรอบให้ผู้เล่นแล้ว', false); return; }
@@ -201,14 +203,14 @@ async function board() {
   try {
     const d = await (await fetch('/api/leaderboard')).json();
     const row = r =>
-      `<tr><td>${r.rank}</td><td class="hd">${esc(r.team)}</td>` +
-      `<td>${r.stormPassed ? '✓' : '✗'} ${r.stormHits}/${r.stormTotal}</td>` +
-      `<td>${r.players} คน</td>` +
-      `<td class="sc">${fmt(r.perHead)}/คน</td>` +
+      `<tr><td>${r.rank}</td>` +
+      `<td class="hd">${esc(r.name)}${r.isAdmin ? ' <span style="opacity:.5">(ผู้ดูแล)</span>' : ''}</td>` +
+      `<td>${r.stormPassed ? '✓ ผ่านพายุ' : '✗ ตกพายุ'}</td>` +
+      `<td>${r.kills} ดวง · ×${r.bestCombo}</td>` +
       `<td class="sc">${fmt(r.score)}</td></tr>`;
-    const empty = n => `<tr><td colspan="6" style="opacity:.35">${n}</td></tr>`;
-    $('board').innerHTML  = d.teams.length ? d.teams.map(row).join('') : empty('ยังไม่มีทีมไหนเล่นจบ');
-    $('aboard').innerHTML = d.admin.length ? d.admin.map(row).join('') : empty('—');
+    const empty = n => `<tr><td colspan="5" style="opacity:.35">${n}</td></tr>`;
+    const rows = d.scores || [];
+    $('board').innerHTML = rows.length ? rows.map(row).join('') : empty('ยังไม่มีใครเล่นจบ');
   } catch (e) { /* บอร์ดล่มห้ามทำให้ทั้งหน้าพัง */ }
 }
 function esc(t) {

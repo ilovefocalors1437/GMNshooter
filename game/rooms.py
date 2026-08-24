@@ -28,17 +28,36 @@ PLAYER_COLORS = C.SLOT_COLORS
 
 
 class Player:
+    """
+    หนึ่งคน = หนึ่งคะแนน หนึ่งคอมโบ หนึ่งชื่อ
+
+    เดิมคะแนนกับคอมโบเป็นของ *ห้อง* ทุกคนยิงเข้ากองกลางเดียวกัน
+    เปลี่ยนเมื่อ 2026-08-24: ทุกคนอยู่สนามเดียวกัน แย่งอุกกาบาตชุดเดียวกัน
+    แต่ใครยิงโดนคนนั้นได้คะแนน คอมโบก็เป็นสายของใครของมัน (ดู CLAUDE.md)
+
+    `color` คือสีประจำตัวที่ระบบแจกให้ (แดง/น้ำเงิน) ใช้แยกกระสุนกับป้ายบนจอ
+    `name` คือชื่อที่เจ้าตัวพิมพ์เอง ใช้ขึ้น leaderboard — คนละเรื่องกัน
+    """
+
     def __init__(self, meta, slot):
         self.slot = slot
-        self.name = meta["name"]
+        self.color = meta["name"]        # สีประจำตัว ไม่ใช่ชื่อคน
+        self.name = None                 # ชื่อที่เจ้าตัวพิมพ์ ยังไม่ตั้ง = None
         self.en = meta["en"]
         self.hex = meta["hex"]
         self.rgb = meta["rgb"]
+        self.is_admin = False
         self.token = None
         self.sid = None
         self.last_seen = 0.0
         self.kills = 0
         self.shots = 0
+
+        # ── ของใครของมัน ──
+        self.score = 0
+        self.combo = 0
+        self.best_combo = 0
+        self.last_kill_ms = -1e9
 
     @property
     def taken(self):
@@ -48,19 +67,38 @@ class Player:
     def connected(self):
         return self.sid is not None
 
+    @property
+    def named(self):
+        return bool(self.name)
+
+    @property
+    def display(self):
+        """ชื่อที่เอาไปโชว์ได้เสมอ — ยังไม่พิมพ์ชื่อก็ใช้สีไปก่อน"""
+        return self.name or self.color
+
+    def reset_round(self):
+        self.kills = 0
+        self.shots = 0
+        self.score = 0
+        self.combo = 0
+        self.best_combo = 0
+        self.last_kill_ms = -1e9
+
     def public(self):
-        return {"slot": self.slot, "name": self.name, "en": self.en, "hex": self.hex,
+        return {"slot": self.slot, "name": self.display, "named": self.named,
+                "color": self.color, "en": self.en, "hex": self.hex,
                 "rgb": self.rgb, "taken": self.taken, "connected": self.connected,
-                "kills": self.kills, "shots": self.shots}
+                "kills": self.kills, "shots": self.shots,
+                "score": self.score, "combo": self.combo,
+                "bestCombo": self.best_combo, "isAdmin": self.is_admin}
 
 
 class Room:
-    """หนึ่งห้อง = หนึ่งทีม"""
+    """หนึ่งห้อง = หนึ่งสนาม ทุกคนในนี้เห็นอุกกาบาตชุดเดียวกันและแย่งกันยิง"""
 
     def __init__(self, code):
         self.lock = threading.RLock()
         self.code = code
-        self.team = None                 # คนแรกที่เข้าเป็นคนตั้ง
         self.created = time.time()
         # สร้างทีละคนตอนมีคนเข้า ไม่ได้จองไว้ล่วงหน้า — จำนวนคนไม่ตายตัวแล้ว
         self.players = []
@@ -75,11 +113,7 @@ class Room:
         self.start_ms = 0.0
         self.end_ms = 0.0
 
-        self.score = 0                   # คะแนนดิบของทีม (ยังไม่คูณความยาก)
-        self.kills = 0
-        self.combo = 0
-        self.best_combo = 0
-        self.last_kill_ms = -1e9
+        self.kills = 0                   # ผลรวมของทั้งห้อง (คะแนนอยู่ที่ตัว Player)
         self.last_board = None           # ผลที่เพิ่งส่งขึ้น leaderboard
         self.storm_total = 0             # จำนวนดวงในเฟสพายุทั้งหมด
         self.storm_hits = 0              # สอยได้กี่ดวงในเฟสพายุ
@@ -94,8 +128,6 @@ class Room:
         self.qte_by_slot = {}            # slot -> รัวได้กี่ครั้ง
         self._qte_last_tap = {}          # sid -> เวลาแตะล่าสุด (กันรัวเกินมนุษย์)
 
-        # ── ห้องของ admin (คะแนนลงบอร์ด ADMIN แยกจากบอร์ดเด็ก) ──
-        self.is_admin_room = False
         self.ended_ms = 0.0
         # คนที่ "ดู" อย่างเดียว ไม่กินสล็อต ไม่นับเป็นผู้เล่น (จอ admin)
         self.watchers = set()
@@ -154,6 +186,31 @@ class Room:
     def active(self):
         return [p for p in self.players if p.taken]
 
+    def set_name(self, sid, name):
+        """ตั้งชื่อของตัวเอง — คืน Player ถ้าสำเร็จ, None ถ้าไม่ใช่ผู้เล่นในห้อง"""
+        with self.lock:
+            p = self.player_of_sid(sid)
+            if p is None:
+                return None
+            p.name = name
+            return p
+
+    def name_taken(self, name, exclude=None):
+        """ชื่อซ้ำกับคนอื่นในห้องไหม — บอร์ดรายบุคคลจะได้ไม่มีสองแถวชื่อเดียวกัน"""
+        low = (name or "").strip().lower()
+        with self.lock:
+            return any(p is not exclude and (p.name or "").lower() == low
+                       for p in self.players)
+
+    def unnamed(self):
+        """คนที่ยังไม่พิมพ์ชื่อ — เริ่มรอบไม่ได้ถ้ายังเหลือ"""
+        return [p for p in self.active() if not p.named]
+
+    def total_score(self):
+        """ผลรวมของทุกคน — ใช้โชว์บนแผง admin เฉยๆ ไม่ได้ใช้ตัดสินอันดับ"""
+        with self.lock:
+            return sum(p.score for p in self.players)
+
     def connected_count(self):
         return sum(1 for p in self.players if p.connected)
 
@@ -172,11 +229,7 @@ class Room:
             self.round_id += 1
             self.seed = secrets.randbelow(2 ** 31)
             self.destroyed = {}
-            self.score = 0
             self.kills = 0
-            self.combo = 0
-            self.best_combo = 0
-            self.last_kill_ms = -1e9
             self.last_board = None
             self.storm_total = 0
             self.storm_hits = 0
@@ -187,8 +240,7 @@ class Room:
             self.qte_start_ms = 0.0
             self.qte_end_ms = 0.0
             for p in self.players:
-                p.kills = 0
-                p.shots = 0
+                p.reset_round()
 
             self.schedule = self._build_schedule()
             self.state = "countdown"
@@ -417,24 +469,29 @@ class Room:
                         "hex": p.hex, "done": done, "need": need}
 
             self.destroyed[meteor_id] = p.slot
-            t = now_ms()
-            if t - self.last_kill_ms > C.COMBO_WINDOW_MS:
-                self.combo = 0
-            self.combo = min(C.COMBO_MAX, self.combo + 1)
-            self.best_combo = max(self.best_combo, self.combo)
-            self.last_kill_ms = t
 
-            gained = C.SCORE_PER_HIT * self.combo
-            self.score += gained
-            self.kills += 1
+            # คอมโบเป็นสายของใครของมัน — ยิงรัวเองถึงจะต่อสาย
+            # เพื่อนยิงโดนไม่ได้ต่อสายให้เรา (เดิมคอมโบเป็นของห้อง คนที่นั่งเฉยๆ ก็ได้ตัวคูณ)
+            t = now_ms()
+            if t - p.last_kill_ms > C.COMBO_WINDOW_MS:
+                p.combo = 0
+            p.combo = min(C.COMBO_MAX, p.combo + 1)
+            p.best_combo = max(p.best_combo, p.combo)
+            p.last_kill_ms = t
+
+            gained = C.SCORE_PER_HIT * p.combo
+            p.score += gained
             p.kills += 1
+            self.kills += 1
+            # ศึกเดือดยังนับรวมทั้งห้องเหมือนเดิม — event พิเศษต้องช่วยกัน
             if wire.get("storm"):
                 self.storm_hits += 1
 
             return {"kind": "destroyed", "meteorId": meteor_id, "slot": p.slot, "hex": p.hex,
-                    "gained": gained, "teamScore": self.score, "combo": self.combo,
-                    "kills": self.kills, "stormHits": self.storm_hits,
-                    "stormTotal": self.storm_total}
+                    "name": p.display,
+                    "gained": gained, "score": p.score, "combo": p.combo,
+                    "kills": p.kills, "roomKills": self.kills,
+                    "stormHits": self.storm_hits, "stormTotal": self.storm_total}
 
     def ended_for(self, seconds):
         with self.lock:
@@ -445,8 +502,8 @@ class Room:
         """
         จบรอบแล้วกลับไปรอรอบใหม่ — ห้องเดิม รหัสเดิม เด็กชุดใหม่เข้าได้เลย
 
-        ต้องล้างชื่อทีมกับคนที่ออกไปแล้วด้วย ไม่งั้นกลุ่มถัดไปที่มาเล่น
-        จะกลายเป็นชื่อทีมของกลุ่มก่อนหน้าโดยไม่มีใครตั้งใจ (เจอตอนเทสจริง)
+        ต้องตัดคนที่ออกไปแล้วทิ้งด้วย ไม่งั้นกลุ่มถัดไปที่มาเล่นจะเจอชื่อคนกลุ่มก่อน
+        ค้างอยู่บนจอโดยไม่มีใครตั้งใจ (เจอตอนเทสจริง)
         """
         with self.lock:
             self.state = "lobby"
@@ -454,9 +511,7 @@ class Room:
             self.destroyed = {}
             self.damage = {}
             self.ended_ms = 0.0
-            self.score = 0
             self.kills = 0
-            self.combo = 0
             self.storm_total = 0
             self.storm_hits = 0
             self.qte_wire = None
@@ -472,12 +527,9 @@ class Room:
             self.players = keep
             self.by_token = {t: p for t, p in self.by_token.items() if p in keep}
             for p in keep:
-                p.kills = 0
-                p.shots = 0
-
-            # ไม่มีใครเหลือ = กลุ่มถัดไปตั้งชื่อทีมเองได้
-            if not keep:
-                self.team = None
+                p.reset_round()
+                # ชื่อยังอยู่ — คนเดิมที่ยังไม่ออกจากจอ ไม่ต้องพิมพ์ใหม่ทุกรอบ
+                # คนที่ออกไปแล้วถูกตัดทิ้งไปพร้อมชื่อตั้งแต่บรรทัดบน
 
     def storm_result(self):
         """คืน (ผ่านไหม, ตัวคูณ, อัตราส่วน)"""
@@ -508,13 +560,13 @@ class Room:
     def public(self):
         with self.lock:
             return {
-                "code": self.code, "team": self.team, "state": self.state,
+                "code": self.code, "state": self.state,
                 "phase": self.phase(),
                 "stormHits": self.storm_hits, "stormTotal": self.storm_total,
                 "stormStartSec": C.STORM_START_SEC, "stormPassRate": C.STORM_PASS_RATE,
                 "roundId": self.round_id,
                 "players": [p.public() for p in self.players],
-                "score": self.score, "kills": self.kills, "combo": self.combo,
+                "totalScore": self.total_score(), "kills": self.kills,
                 "timeLeftMs": round(self.time_left_ms()),
                 "qteLeftMs": round(self.qte_left_ms()),
                 "qteHits": self.qte_hits, "qteNeed": self.qte_need,
@@ -558,37 +610,31 @@ class Rooms:
         self.lock = threading.RLock()
         self.rooms = {}
 
-    def create(self, is_admin=False):
+    def create(self):
         with self.lock:
             self._gc()
             for _ in range(200):
                 code = "HT%03d" % secrets.randbelow(1000)
                 if code not in self.rooms:
                     r = Room(code)
-                    r.is_admin_room = bool(is_admin)
                     self.rooms[code] = r
                     return r
             return None                   # ห้องเต็ม 1000 ห้องพร้อมกัน (ไม่น่าเกิด)
 
     def primary(self):
-        """ห้องหลักของบูธ — มีใบเดียว ถ้าหายก็สร้างใหม่
+        """
+        ห้องหลักของบูธ — มีใบเดียว ถ้าหายก็สร้างใหม่
 
         บูธมีจอเดียว รหัสเดียว ถ้าปล่อยให้ create() ทุกครั้งที่ admin refresh
         รหัสบนจอจะเปลี่ยนไปเรื่อยๆ แล้วเด็กที่พิมพ์รหัสเก่าจะเข้าไม่ได้
+
+        ตั้งแต่ 2026-08-24 ไม่มีห้องแยกของ admin แล้ว — admin ลงเล่นห้องนี้
+        ห้องเดียวกับเด็ก แย่งอุกกาบาตชุดเดียวกันจริงๆ (ดู CLAUDE.md)
         """
         with self.lock:
             for r in self.rooms.values():
-                if not r.is_admin_room:
-                    return r
+                return r
             return self.create()
-
-    def admin_room(self):
-        """ห้องส่วนตัวของ admin ตอนอยากลงไปเล่นเอง (คะแนนแยกบอร์ด)"""
-        with self.lock:
-            for r in self.rooms.values():
-                if r.is_admin_room:
-                    return r
-            return self.create(is_admin=True)
 
     def drop(self, code):
         with self.lock:

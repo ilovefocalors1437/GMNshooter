@@ -175,7 +175,9 @@
                border-radius:calc(2 * var(--u)); }
   body.desktop.unlocked #mousehint { display:block; }
   /* ปุ่มยิงไม่ซ่อนบนคอม — เผื่อเบราว์เซอร์บล็อก pointer lock จะได้ไม่เหลือทางยิงเลย */
-  body.desktop #fire { opacity:.55; }
+  /* บนคอมคลิกที่ไหนก็ยิง (ดู mobile-main.js) ปุ่มเลยไม่มีหน้าที่อะไร
+     เดิมแค่หรี่เหลือ .55 ซึ่งยังกินพื้นที่และหลอกให้คิดว่าต้องกดมัน */
+  body.desktop #fire { display:none; }
 
   #fire { position:absolute; right:calc(6 * var(--u)); bottom:6vh; width:calc(15 * var(--u)); height:calc(15 * var(--u));
           max-width:88px; max-height:88px;
@@ -261,19 +263,19 @@
   <button class="btn ghost" id="apw-back" style="font-size:calc(4 * var(--u));padding:calc(2 * var(--u)) calc(6 * var(--u))">ย้อนกลับ</button>
 </div>
 
-<!-- 2. ตั้งชื่อทีม (เฉพาะคนแรก) -->
-<div id="p-team" class="pane">
-  <div class="sub">คุณเป็นคนแรกของห้องนี้</div>
-  <h1 style="font-size:calc(7 * var(--u))">ตั้งชื่อทีม</h1>
-  <input id="team" maxlength="12" placeholder="ชื่อทีม" autocomplete="off">
-  <div class="err" id="team-err"></div>
-  <button class="btn" id="team-go">ยืนยัน</button>
+<!-- 2. ตั้งชื่อของตัวเอง — ทุกคนพิมพ์ ไม่ใช่แค่คนแรก (บอร์ดเป็นรายบุคคล) -->
+<div id="p-name" class="pane">
+  <div class="sub">ชื่อนี้จะขึ้นกระดานคะแนน</div>
+  <h1 style="font-size:calc(7 * var(--u))">ใส่ชื่อของคุณ</h1>
+  <input id="name" maxlength="12" placeholder="ชื่อของคุณ" autocomplete="off">
+  <div class="err" id="name-err"></div>
+  <button class="btn" id="name-go">ยืนยัน</button>
 </div>
 
 <!-- 3. ห้องรอ -->
 <div id="p-lobby" class="pane">
-  <div class="sub">ทีม</div>
-  <h1 id="lobby-team" style="font-size:calc(9 * var(--u))">—</h1>
+  <div class="sub">คุณคือ</div>
+  <h1 id="lobby-name" style="font-size:calc(9 * var(--u))">—</h1>
   <div class="roster" id="roster"></div>
   <div class="sub" id="lobby-hint">รอ admin กดเริ่ม · เพื่อนยังเข้าได้อีก</div>
   <div class="sub" id="lobby-count" style="font-size:calc(5 * var(--u));color:var(--accent)">1 คน</div>
@@ -319,9 +321,12 @@
 
 <!-- 6. สรุปผล — คะแนนใหญ่สุด · ยิงอะไรไปบ้าง · GMN คืออะไร -->
 <div id="p-sum" class="pane">
-  <div class="s-team">ทีม <b id="sum-team">—</b></div>
+  <div class="s-team"><b id="sum-team">—</b></div>
   <div class="s-score" id="sum-score">0</div>
   <div class="s-kills" id="sum-kills"></div>
+
+  <h2>คะแนนในสนามนี้</h2>
+  <div class="s-list" id="sum-board"></div>
 
   <h2>คุณยิงอะไรไปบ้าง</h2>
   <div class="s-list" id="sum-list"></div>
@@ -350,6 +355,10 @@
   body.spectator .credit { font-size:calc(1.6 * var(--u)); }
   body.spectator #cards  { width:calc(36 * var(--u)); font-size:.9em; }
   body.spectator #teamscore { font-size:calc(3.2 * var(--u)); }
+  /* แถวของตัวเองบนตารางสรุป — หาเจอในพริบตาโดยไม่ต้องอ่านทุกชื่อ */
+  #sum-board .s-row.me { background:rgba(89,192,255,.16); border-radius:calc(1 * var(--u)); }
+  #sum-board .s-row.me .nm { color:var(--accent); }
+  #sum-board .tag { font-size:.75em; opacity:.6; font-weight:400; }
 </style>
 <div class="credit">Meteor data: Global Meteor Network (CC BY 4.0)</div>
 <div id="err"></div>

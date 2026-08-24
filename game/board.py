@@ -1,4 +1,4 @@
-"""game/board.py — leaderboard ที่ต้องรอดข้ามการ restart
+"""game/board.py — leaderboard รายบุคคล ที่ต้องรอดข้ามการ restart
 
 spec §6 เตือนไว้ตรงๆ: "free hoster ส่วนใหญ่ใช้ ephemeral filesystem — restart แล้วไฟล์หาย
 leaderboard หายกลางงาน = บูธพัง"
@@ -10,8 +10,12 @@ leaderboard หายกลางงาน = บูธพัง"
 ถ้า hoster ล้าง fs ทั้งคู่ก็หาย — เลยต้องมีปุ่ม "สำรองข้อมูล" บนจอ admin (§7)
 ที่ดึง JSON ก้อนนี้ไปเก็บไว้เครื่องตัวเอง อย่างน้อยกู้คืนได้
 
-**เรียงด้วยคะแนนหลังคูณตัวคูณความยากแล้วเท่านั้น** (§10 ห้ามเรียงด้วยคะแนนดิบ)
-ไม่งั้นทีมที่เล่น Easy ครองบอร์ดทั้งวัน
+── เปลี่ยนเมื่อ 2026-08-24 (ตามที่เจ้าของงานสั่ง) ──────────────────
+เดิม: 1 แถว = 1 ทีม · เรียงด้วยคะแนนต่อหัว · บอร์ด admin แยกจากบอร์ดเด็ก
+ตอนนี้: **1 แถว = 1 คน · เรียงด้วยคะแนนของคนคนนั้น · บอร์ดเดียวรวม admin ด้วย**
+
+ไม่ต้องหารด้วยจำนวนคนอีกแล้ว เพราะทุกคนยิงเก็บคะแนนของตัวเอง
+คนในห้องใหญ่ไม่ได้เปรียบโดยอัตโนมัติ — อุกกาบาตชุดเดียวกันแต่ต้องแย่งกันยิง
 """
 
 import json
@@ -31,20 +35,27 @@ JSON_PATH = os.path.join(os.path.dirname(DB_PATH), "leaderboard.json")
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS scores (
-    id          INTEGER PRIMARY KEY,
-    team        TEXT NOT NULL,
-    score       INTEGER NOT NULL,   -- คะแนนหลังคูณพายุแล้ว
-    raw_score   INTEGER NOT NULL,   -- ก่อนคูณ (ไว้ตรวจย้อนหลัง)
-    per_head    REAL NOT NULL,      -- score / players  ← ใช้เรียงบอร์ด
-    players     INTEGER NOT NULL,
-    kills       INTEGER NOT NULL,
-    storm_hits  INTEGER NOT NULL,
-    storm_total INTEGER NOT NULL,
-    storm_passed INTEGER NOT NULL,
-    is_admin    INTEGER NOT NULL,   -- แยกบอร์ด admin ออกจากบอร์ดเด็กเด็ดขาด
-    ts          REAL NOT NULL
+    id           INTEGER PRIMARY KEY,
+    name         TEXT NOT NULL,      -- ชื่อที่เจ้าตัวพิมพ์เอง (admin ใช้ชื่อตายตัว)
+    score        INTEGER NOT NULL,   -- คะแนนหลังคูณพายุ + โบนัส QTE  ← ใช้เรียงบอร์ด
+    raw_score    INTEGER NOT NULL,   -- ก่อนคูณ (ไว้ตรวจย้อนหลัง)
+    kills        INTEGER NOT NULL,
+    best_combo   INTEGER NOT NULL,
+    storm_passed INTEGER NOT NULL,   -- ผลรวมของทั้งห้อง ไม่ใช่ของคนเดียว
+    qte_passed   INTEGER NOT NULL,   -- เหมือนกัน — event พิเศษต้องช่วยกัน
+    is_admin     INTEGER NOT NULL,   -- ไว้ติดป้ายเฉยๆ **ไม่ได้แยกบอร์ด**
+    round_no     INTEGER NOT NULL,   -- รอบที่เท่าไรของงาน
+    ts           REAL NOT NULL
 );
-CREATE INDEX IF NOT EXISTS idx_perhead ON scores(is_admin, per_head DESC);
+CREATE INDEX IF NOT EXISTS idx_score ON scores(score DESC);
+
+-- นับ "จำนวนรอบที่เล่นไปแล้ว" แยกจากจำนวนแถว
+-- เพราะตอนนี้ 1 รอบมีหลายแถว (แถวละคน) นับแถวแล้วจะได้เลขเฟ้อทันที
+CREATE TABLE IF NOT EXISTS rounds (
+    id      INTEGER PRIMARY KEY,
+    players INTEGER NOT NULL,
+    ts      REAL NOT NULL
+);
 """
 
 
@@ -54,53 +65,86 @@ def _conn():
         os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
         _con = sqlite3.connect(DB_PATH, check_same_thread=False)
         _con.row_factory = sqlite3.Row
+        _migrate(_con)
         _con.executescript(SCHEMA)
         _con.commit()
     return _con
 
 
-def submit(team, raw_score, players, kills, storm_hits, storm_total,
-           storm_passed, storm_mult, is_admin=False, bonus=0):
+def _migrate(c):
     """
-    บันทึกผลรอบ คืน (row_id, คะแนนสุดท้าย, อันดับ)
+    ตาราง scores ของเดิมเก็บแถวละ *ทีม* คนละหน้าตากับของใหม่
 
-    เรียงบอร์ดด้วย **คะแนนต่อหัว** ไม่ใช่คะแนนรวม
-    ทีม 5 คนยิงได้มากกว่าทีม 1 คนโดยธรรมชาติ (เจออุกกาบาตเยอะกว่าตามสัดส่วน)
-    หารด้วยจำนวนคนแล้วเทียบกันได้ตรงๆ ไม่มี magic number ไม่มีข้อครหาว่าโกง
+    ถ้าเจอของเก่าให้เปลี่ยนชื่อเก็บไว้เฉยๆ ไม่ลบทิ้ง — คะแนนของงานที่ผ่านมาแล้ว
+    ไม่ใช่ของที่จะมาโยนทิ้งเพราะเราเปลี่ยนกติกา (ดึงกลับด้วย SQL ได้ถ้าอยากได้)
     """
-    players = max(1, int(players))
-    # โบนัส QTE บวก *หลัง* คูณพายุ — ทีมที่พลาดพายุแต่รุมลูกไฟดวงสุดท้ายได้
-    # ต้องได้โบนัสเต็ม ไม่ใช่โดนหารครึ่งไปด้วย
-    final = int(round(raw_score * storm_mult)) + int(bonus)
-    per_head = final / players
+    try:
+        cols = [r[1] for r in c.execute("PRAGMA table_info(scores)")]
+    except sqlite3.Error:
+        return
+    if cols and "name" not in cols:
+        stamp = time.strftime("%Y%m%d_%H%M%S")
+        c.execute(f"ALTER TABLE scores RENAME TO scores_team_{stamp}")
+        c.commit()
+        print(f"[board] เจอบอร์ดแบบทีมของเดิม — ย้ายไปเก็บที่ scores_team_{stamp} "
+              f"แล้วเริ่มบอร์ดรายบุคคลใหม่", flush=True)
 
+
+def submit_round(entries, storm_mult, bonus, storm_passed, qte_passed):
+    """
+    บันทึกผลรอบ — **แถวละคน**  คืน list ของ dict เรียงตาม entries ที่ส่งเข้ามา
+
+    entries = [{"name":…, "raw":…, "kills":…, "bestCombo":…, "isAdmin":…, "slot":…}, …]
+
+    ตัวคูณพายุกับโบนัส QTE เป็นผลของ *ทั้งห้อง* แต่เอามาคิดกับคะแนนของแต่ละคน
+    — event พิเศษเลยยังต้องช่วยกันเหมือนเดิม ใครทิ้งทีมก็เสียประโยชน์ตัวเองด้วย
+    โบนัส QTE บวก *หลัง* คูณพายุ คนที่พลาดพายุแต่รุมลูกไฟดวงสุดท้ายได้ต้องได้เต็ม
+    """
+    out = []
     with _lock:
         c = _conn()
-        cur = c.execute(
-            "INSERT INTO scores (team, score, raw_score, per_head, players, kills,"
-            " storm_hits, storm_total, storm_passed, is_admin, ts)"
-            " VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-            (team, final, int(raw_score), per_head, players, int(kills),
-             int(storm_hits), int(storm_total), 1 if storm_passed else 0,
-             1 if is_admin else 0, time.time()))
+        ts = time.time()
+        cur = c.execute("INSERT INTO rounds (players, ts) VALUES (?,?)",
+                        (len(entries), ts))
+        round_no = c.execute("SELECT COUNT(*) FROM rounds").fetchone()[0]
+
+        for e in entries:
+            raw = int(e.get("raw", 0))
+            final = int(round(raw * storm_mult)) + int(bonus)
+            cur = c.execute(
+                "INSERT INTO scores (name, score, raw_score, kills, best_combo,"
+                " storm_passed, qte_passed, is_admin, round_no, ts)"
+                " VALUES (?,?,?,?,?,?,?,?,?,?)",
+                (e.get("name") or "?", final, raw, int(e.get("kills", 0)),
+                 int(e.get("bestCombo", 0)), 1 if storm_passed else 0,
+                 1 if qte_passed else 0, 1 if e.get("isAdmin") else 0,
+                 round_no, ts))
+            out.append({"id": cur.lastrowid, "slot": e.get("slot"),
+                        "name": e.get("name"), "score": final, "rawScore": raw})
         c.commit()
-        rid = cur.lastrowid
-        rank = c.execute(
-            "SELECT COUNT(*)+1 FROM scores WHERE is_admin=? AND per_head > ?",
-            (1 if is_admin else 0, per_head)).fetchone()[0]
+
+        # อันดับคิดหลัง insert ครบทุกคน ไม่งั้นคนแรกในลูปจะเห็นบอร์ดที่ยังไม่ครบรอบตัวเอง
+        for r in out:
+            r["rank"] = c.execute(
+                "SELECT COUNT(*)+1 FROM scores WHERE score > ?", (r["score"],)).fetchone()[0]
         _export_json()
-    return rid, final, rank
+    return out
 
 
-def top(n=10, is_admin=False):
+def top(n=10):
+    """บอร์ดเดียว รวม admin กับผู้เล่นไว้ด้วยกัน เรียงด้วยคะแนนตรงๆ"""
     with _lock:
         rows = _conn().execute(
-            "SELECT * FROM scores WHERE is_admin=? ORDER BY per_head DESC, ts ASC LIMIT ?",
-            (1 if is_admin else 0, n)).fetchall()
+            "SELECT * FROM scores ORDER BY score DESC, ts ASC LIMIT ?", (n,)).fetchall()
     return [_row(r, i + 1) for i, r in enumerate(rows)]
 
 
 def total_rounds():
+    with _lock:
+        return _conn().execute("SELECT COUNT(*) FROM rounds").fetchone()[0]
+
+
+def total_entries():
     with _lock:
         return _conn().execute("SELECT COUNT(*) FROM scores").fetchone()[0]
 
@@ -111,14 +155,16 @@ def rank_of(row_id):
         r = c.execute("SELECT score FROM scores WHERE id=?", (row_id,)).fetchone()
         if not r:
             return None, 0
-        rank = c.execute("SELECT COUNT(*)+1 FROM scores WHERE score > ?", (r["score"],)).fetchone()[0]
+        rank = c.execute("SELECT COUNT(*)+1 FROM scores WHERE score > ?",
+                         (r["score"],)).fetchone()[0]
         total = c.execute("SELECT COUNT(*) FROM scores").fetchone()[0]
     return rank, total
 
 
 def all_rows():
     with _lock:
-        rows = _conn().execute("SELECT * FROM scores ORDER BY is_admin, per_head DESC, ts ASC").fetchall()
+        rows = _conn().execute(
+            "SELECT * FROM scores ORDER BY score DESC, ts ASC").fetchall()
     return [_row(r, i + 1) for i, r in enumerate(rows)]
 
 
@@ -126,26 +172,28 @@ def reset():
     with _lock:
         c = _conn()
         c.execute("DELETE FROM scores")
+        c.execute("DELETE FROM rounds")
         c.commit()
         _export_json()
 
 
 def _row(r, rank):
     return {
-        "rank": rank, "id": r["id"], "team": r["team"], "score": r["score"],
-        "rawScore": r["raw_score"], "perHead": round(r["per_head"]),
-        "players": r["players"], "kills": r["kills"],
-        "stormHits": r["storm_hits"], "stormTotal": r["storm_total"],
-        "stormPassed": bool(r["storm_passed"]), "isAdmin": bool(r["is_admin"]),
-        "ts": r["ts"],
+        "rank": rank, "id": r["id"], "name": r["name"], "score": r["score"],
+        "rawScore": r["raw_score"], "kills": r["kills"],
+        "bestCombo": r["best_combo"],
+        "stormPassed": bool(r["storm_passed"]), "qtePassed": bool(r["qte_passed"]),
+        "isAdmin": bool(r["is_admin"]), "roundNo": r["round_no"], "ts": r["ts"],
     }
 
 
 def _export_json():
     """เขียนสำเนา JSON ทุกครั้งที่บอร์ดเปลี่ยน — เรียกใต้ _lock แล้วเท่านั้น"""
     try:
-        rows = _conn().execute("SELECT * FROM scores ORDER BY is_admin, per_head DESC, ts ASC").fetchall()
+        rows = _conn().execute(
+            "SELECT * FROM scores ORDER BY score DESC, ts ASC").fetchall()
         data = {"exportedAt": time.time(), "count": len(rows),
+                "rounds": _conn().execute("SELECT COUNT(*) FROM rounds").fetchone()[0],
                 "scores": [_row(r, i + 1) for i, r in enumerate(rows)]}
         tmp = JSON_PATH + ".tmp"
         with open(tmp, "w", encoding="utf-8") as f:

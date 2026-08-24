@@ -25,10 +25,12 @@ const $ = id => document.getElementById(id);
 // จอ admin ฝั่งซ้ายฝัง iframe หน้านี้ด้วย ?spectate=1 → ดูเกมสดโดยไม่กินสล็อต
 const QS = new URLSearchParams(location.search);
 const SPECTATE = QS.get('spectate') === '1';
-// ?admin=1 = admin กดเริ่มรอบแล้วสับมาเล่นเต็มจอในห้องของตัวเอง (คะแนนลงบอร์ด ADMIN)
+// ?admin=1 = admin กดเริ่มรอบแล้วสับมาเล่นเต็มจอ **ในห้องเดียวกับเด็ก**
+// ส่งรหัส admin ไปกับ join ด้วย — server ใช้ตัดสินว่าให้ชื่อตายตัวว่า admin
+// และให้เข้าห้องได้แม้รอบเพิ่งเริ่ม (ดู on_join ใน app.py)
 const ADMIN_MODE = QS.get('admin') === '1';
 const URL_CODE = (QS.get('code') || '').trim().toUpperCase();
-const panes = ['p-home', 'p-code', 'p-admin', 'p-team', 'p-lobby', 'p-count', 'p-sum'];
+const panes = ['p-home', 'p-code', 'p-admin', 'p-name', 'p-lobby', 'p-count', 'p-sum'];
 function pane(id) {
   panes.forEach(p => $(p).classList.toggle('on', p === id));
   $('hud').classList.toggle('on', id === null);
@@ -37,7 +39,7 @@ function pane(id) {
 // ══ สถานะ ═════════════════════════════════════════════════
 const S = {
   token: null, slot: 0, hex: '#59c0ff', rgb: [0.35, 0.75, 1],
-  code: null, team: null,
+  code: null, name: null,
   roundId: 0, startMs: 0, endMs: 0,
   schedule: [], spawned: new Set(), destroyed: new Set(),
   playing: false,
@@ -77,7 +79,8 @@ sock.on('connect', () => {
   // มาจากจอ admin พร้อมรหัสห้องแล้ว → เข้าเลยไม่ต้องพิมพ์
   if (URL_CODE) {
     sock.emit('join_room_code', { code: URL_CODE,
-      token: sessionStorage.getItem('spaceht_token') });
+      token: sessionStorage.getItem('spaceht_token'),
+      pw: ADMIN_MODE ? (sessionStorage.getItem('ht_pw') || '') : undefined });
     return;
   }
   const t = sessionStorage.getItem('spaceht_token');
@@ -87,9 +90,9 @@ sock.on('connect', () => {
 
 // ดูอย่างเดียว — ข้ามหน้ากรอกรหัส/ตั้งชื่อทีมไปที่ฉากเลย
 sock.on('spectating', d => {
-  S.code = d.code; S.team = d.team;
+  S.code = d.code;
   $('lobby-code').textContent = d.code;
-  $('teamname').textContent = d.team || 'รอผู้เล่น';
+  $('teamname').textContent = 'กำลังดู · ' + d.code;
   pane(null);
   document.body.classList.add('spectator');
 });
@@ -101,38 +104,42 @@ sock.on('join_failed', d => {
 
 sock.on('joined', d => {
   S.token = d.token; S.slot = d.slot; S.hex = d.hex; S.rgb = d.rgb;
-  S.code = d.code; S.team = d.team;
+  S.code = d.code; S.name = d.needName ? null : d.name; S.isAdmin = !!d.isAdmin;
   sessionStorage.setItem('spaceht_token', d.token);
   sessionStorage.setItem('spaceht_code', d.code);
   document.documentElement.style.setProperty('--me', d.hex);
   $('lobby-code').textContent = d.code;
-  pane(d.needTeamName ? 'p-team' : 'p-lobby');
+  $('lobby-name').textContent = S.name || '—';
+  // ทุกคนพิมพ์ชื่อของตัวเอง — ชื่อนี้ขึ้น leaderboard (admin ได้ชื่อตายตัวมาแล้ว)
+  pane(d.needName ? 'p-name' : 'p-lobby');
   armNoSleep();
   // admin เพิ่งลงมาถึงห้องของตัวเอง → สั่งเริ่มได้แล้ว (ต้อง join ก่อนถึงจะมีผู้เล่นในห้อง)
   if (ADMIN_MODE) sock.emit('admin_room_start', { pw: sessionStorage.getItem('ht_pw') || '' });
 });
 
-sock.on('team_rejected', d => { $('team-err').textContent = d.msg; });
+sock.on('name_rejected', d => { $('name-err').textContent = d.msg; });
 sock.on('error_msg', d => {
   const h = $('lobby-hint');
   if (h) h.textContent = d.msg || '';
 });
-sock.on('team_set', d => { S.team = d.team; $('lobby-team').textContent = d.team; pane('p-lobby'); });
+sock.on('name_set', d => { S.name = d.name; $('lobby-name').textContent = d.name; pane('p-lobby'); });
 
 sock.on('room', st => {
-  // ห้องรีเซ็ตหลังจบรอบ (ทีมถูกล้าง) → คนแรกที่เหลืออยู่ตั้งชื่อใหม่
-  if (!st.team && S.team && !S.spectator && st.state === 'lobby') {
-    S.team = null;
-    $('lobby-team').textContent = '—';
-    if (!S.playing) pane('p-team');
+  // หาแถวของตัวเองในห้อง — ชื่อเป็นของรายคนแล้ว ไม่ใช่ของห้อง
+  const me = (st.players || []).find(p => p.slot === S.slot);
+  if (me && !S.spectator) {
+    // ห้องรีเซ็ตหลังจบรอบแล้วชื่อเราหลุด → กลับไปพิมพ์ใหม่
+    if (!me.named && S.name && st.state === 'lobby' && !S.playing) {
+      S.name = null;
+      $('lobby-name').textContent = '—';
+      pane('p-name');
+    } else if (me.named) {
+      S.name = me.name;
+      $('lobby-name').textContent = me.name;
+      if (!S.playing && $('p-name').classList.contains('on')) pane('p-lobby');
+    }
   }
-  // ใครก็ได้ที่กด "ยืนยัน" ก่อนเป็นคนตั้งชื่อทีม — คนที่เหลือเด้งตามเข้า lobby ทันที
-  if (st.team && !S.team && !S.playing && $('p-team').classList.contains('on')) {
-    pane('p-lobby');
-  }
-  S.team = st.team || S.team;
-  $('lobby-team').textContent = st.team || '—';
-  $('teamname').textContent = st.team || '';
+  $('teamname').textContent = S.name || '';
   const r = $('roster');
   r.innerHTML = st.players.map(p =>
     `<div class="dot${p.connected ? ' on' : ''}" style="background:${p.hex}"></div>`).join('');
@@ -165,7 +172,10 @@ sock.on('round_start', d => {
 });
 
 sock.on('tick', d => {
-  S.score = d.score; S.kills = d.kills; S.combo = d.combo;
+  // server ส่งคะแนนมาทั้งห้อง เราหยิบเฉพาะ slot ของตัวเอง
+  if (d.scores) S.score = d.scores[S.slot] ?? S.score;
+  if (d.combos) S.combo = d.combos[S.slot] ?? S.combo;
+  S.kills = d.kills;
   if (d.qteNeed !== undefined) { S.qteHits = d.qteHits; S.qteNeed = d.qteNeed; }
   if (d.phase && d.phase !== S.phase) setPhase(d.phase);
   if (d.stormTotal !== undefined) { S.stormHits = d.stormHits; S.stormTotal = d.stormTotal; }
@@ -239,7 +249,8 @@ function setPhase(ph) {
 // server ตัดสินแล้วว่าใครยิงโดน — ทุกเครื่องเอาออกพร้อมกันตรงนี้ที่เดียว
 sock.on('destroyed', d => {
   S.destroyed.add(d.meteorId);
-  S.score = d.teamScore; S.combo = d.combo; S.kills = d.kills;
+  // คะแนน/คอมโบเป็นของคนยิง — คนอื่นยิงโดนเราไม่ได้คะแนนและคอมโบไม่ขยับ
+  if (d.slot === S.slot) { S.score = d.score; S.combo = d.combo; }
   if (d.stormTotal !== undefined) { S.stormHits = d.stormHits; S.stormTotal = d.stormTotal; }
   const m = field.byId(d.meteorId);
   if (m) {
@@ -248,7 +259,7 @@ sock.on('destroyed', d => {
     if (S.phase !== 'storm' && m.gmn) floatText.add(m.position, m.gmn.duration);
     contactLog.add(m, 'hit');
     field.kill(m);
-    sfx.hit(d.combo);
+    sfx.hit(d.slot === S.slot ? d.combo : 1);
     if (d.slot === S.slot) juice.shake(CFG.juice.shakeHit);
   }
 });
@@ -260,9 +271,23 @@ sock.on('round_end', d => {
   document.body.classList.remove('qte');
   $('qtebar').style.display = 'none';
 
-  $('sum-team').textContent = d.team || '—';
-  $('sum-score').textContent = d.score.toLocaleString('en-US');
-  $('sum-kills').innerHTML = `สอยได้ <b>${d.kills}</b> ดวง · คอมโบสูงสุด <b>\u00d7${d.bestCombo}</b>`;
+  // บอร์ดเป็นรายบุคคลแล้ว — โชว์ผลของตัวเองเป็นหลัก
+  const mine = (d.results || []).find(r => r.slot === S.slot) || {};
+  $('sum-team').textContent = mine.name || S.name || '—';
+  $('sum-score').textContent = (mine.score || 0).toLocaleString('en-US');
+  $('sum-kills').innerHTML =
+    `สอยได้ <b>${mine.kills || 0}</b> ดวง · คอมโบสูงสุด <b>×${mine.bestCombo || 0}</b>` +
+    (mine.rank ? ` · อันดับ <b>#${mine.rank}</b>` : '');
+
+  // ใครในสนามได้เท่าไหร่บ้าง — เห็นทันทีว่าแพ้ชนะใคร
+  const sb = $('sum-board');
+  if (sb) {
+    sb.innerHTML = (d.results || []).map((r, n) =>
+      `<div class="s-row${r.slot === S.slot ? ' me' : ''}">` +
+      `<div class="nm">${n + 1}. ${escapeHtml(r.name || '?')}` +
+      `${r.isAdmin ? ' <span class="tag">ผู้ดูแล</span>' : ''}</div>` +
+      `<div class="ct">${(r.score || 0).toLocaleString('en-US')}</div></div>`).join('');
+  }
 
   // "ยิงอะไรไป กล้องชาติไหนบันทึกไว้ อย่างละกี่ดวง" — มาจากดวงที่สอยได้จริงในรอบนี้
   const rows = contactLog.catches();
@@ -314,9 +339,10 @@ sock.on('admin_login', d => {
   }
 });
 
-$('team-go').onclick = () => {
-  $('team-err').textContent = '';
-  sock.emit('set_team', { name: $('team').value });
+$('name').addEventListener('keydown', e => { if (e.key === 'Enter') $('name-go').click(); });
+$('name-go').onclick = () => {
+  $('name-err').textContent = '';
+  sock.emit('set_name', { name: $('name').value });
 };
 
 // ผู้เล่นไม่มีปุ่มเริ่ม — admin เป็นคนกด คนอื่นจะได้ทยอยเข้าจนครบก่อน

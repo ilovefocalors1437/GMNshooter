@@ -46,20 +46,26 @@ def is_blocked(name: str) -> bool:
     return any(bad in n for bad in (_normalize(b) for b in BLOCKED))
 
 
-def clean_team_name(raw, min_len=3, max_len=12):
+def clean_player_name(raw, min_len=2, max_len=12, reserved=()):
     """
-    คืน (ชื่อที่ใช้ได้, ข้อความ error)
+    ชื่อผู้เล่นที่จะขึ้น leaderboard — คืน (ชื่อที่ใช้ได้, ข้อความ error)
     ชื่อผ่าน → (ชื่อ, None) / ไม่ผ่าน → (None, เหตุผล)
+
+    ตั้งแต่ 2026-08-24 ไม่มีชื่อทีมแล้ว ทุกคนพิมพ์ชื่อตัวเอง (ดู CLAUDE.md)
+    `reserved` กันชื่อที่ระบบจองไว้ — โดยเฉพาะ "admin" ไม่งั้นเด็กตั้งชื่อนี้
+    แล้วบอร์ดจะแยกไม่ออกว่าแถวไหนคือผู้ดูแลจริง
     """
     if raw is None:
-        return None, "ยังไม่ได้ใส่ชื่อทีม"
+        return None, "ยังไม่ได้ใส่ชื่อ"
     name = " ".join(str(raw).split())        # ตัดช่องว่างหัวท้าย + ยุบช่องว่างซ้ำ
     name = name.upper()                       # spec: บังคับตัวใหญ่
 
     if len(name) < min_len:
-        return None, f"ชื่อทีมต้องยาวอย่างน้อย {min_len} ตัว"
+        return None, f"ชื่อต้องยาวอย่างน้อย {min_len} ตัว"
     if len(name) > max_len:
-        return None, f"ชื่อทีมยาวได้ไม่เกิน {max_len} ตัว"
+        return None, f"ชื่อยาวได้ไม่เกิน {max_len} ตัว"
+    if any(name == str(r).upper() for r in reserved):
+        return None, "ชื่อนี้ระบบจองไว้ ใช้ชื่ออื่นนะ"
     if is_blocked(name):
         return None, "ชื่อนี้ใช้ไม่ได้ ลองใหม่นะ"
     return name, None

@@ -284,7 +284,7 @@ export class MeteorField {
 
   /**
    * เดินเวลา — ไม่มี integration ทั้งหมดคำนวณจาก now
-   * @returns {Array} รายการดวงที่เพิ่งตกใส่เมือง (main เอาไปหัก HP)
+   * @returns {Array} รายการดวงที่เพิ่งไหม้หมดกลางอากาศ (main เอาไปตัดคอมโบ)
    */
   /** Phase B: เกิดตามคำสั่ง server — id มาจาก server ห้ามสร้างเอง */
   spawnFromWire(wire) {
