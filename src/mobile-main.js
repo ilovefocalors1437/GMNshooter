@@ -138,7 +138,7 @@ const S = {
   lastNavEmit: 0,
   lastAimEmit: 0,
   spectator: SPECTATE,
-  shipHp: 200, shipMaxHp: 200,
+  shipHp: 75, shipMaxHp: 75,
   qteOn: false, qteNeed: 0, qteHits: 0, qteEndMs: 0, qteMeteorId: 0,
 
   // 3D Flight Control Inputs
@@ -405,7 +405,7 @@ sock.on('round_start', d => {
   S.stormStartSec = d.stormStartSec; S.stormPassRate = d.stormPassRate;
   S.stormMinScale = d.stormMinScale; S.phase = 'normal';
   S.stormHits = 0; S.stormTotal = 0;
-  S.shipHp = d.shipHp || 200; S.shipMaxHp = d.shipMaxHp || 200;
+  S.shipHp = d.shipHp || 75; S.shipMaxHp = d.shipMaxHp || 75;
   S.hasReachedMoon = false;
   boostActive = false;
   boostStartMs = -1e9;
@@ -581,7 +581,7 @@ sock.on('round_end', d => {
     `<div class="cert-sub">${badgeSub}</div>` +
     `</div>` +
     `<div style="margin-top:1.2vh;font-size:calc(3.4*var(--u));">` +
-    `ทีมสอยได้ทั้งหมด <b>${d.teamKills || d.kills || 0}</b> ดวง · เกราะยาน <b>${d.shipHp || 0}/200 HP</b>` +
+    `ทีมสอยได้ทั้งหมด <b>${d.teamKills || d.kills || 0}</b> ดวง · เกราะยาน <b>${d.shipHp || 0}/${d.shipMaxHp || 75} HP</b>` +
     (d.teamRank ? ` · อันดับบอร์ด <b>#${d.teamRank}</b>` : '') +
     `</div>`;
 

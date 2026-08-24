@@ -62,7 +62,7 @@ QTE_YAW_LIMIT_DEG = 48       # ดวงสุดท้ายต้องอย�
 QTE_SIZE_MULT = 2.2          # โตกว่าปกติ — ดวงเดียวที่ทั้งทีมรุมยิง ต้องเห็นชัด
 
 # ═══ Thailand CE-7 Moonshot & Spacecraft Shield ════════════
-SHIP_MAX_HP = 200            # พลังเกราะยาน Long March 5 / Chang'e-7 (200 HP)
+SHIP_MAX_HP = 75             # พลังเกราะยาน Long March 5 / Chang'e-7 (75 HP)
 SHIP_REPAIR_ON_COMBO = 2     # ฟื้นฟูเกราะเล็กน้อยเมื่อทำคอมโบสำเร็จ
 SHIP_MIN_DAMAGE = 4          # ดาเมจต่ำสุดของอุกกาบาตช้า
 SHIP_MAX_DAMAGE = 20         # ดาเมจสูงสุดของอุกกาบาตความเร็วสูง (70+ km/s)

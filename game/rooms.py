@@ -601,7 +601,7 @@ class Room:
             return "F"
         if self.arrived_at_moon:
             return "S"
-        if self.ship_hp >= 100:
+        if self.ship_hp >= 40:
             return "A"
         return "B"
 
