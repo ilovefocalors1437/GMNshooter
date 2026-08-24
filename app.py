@@ -456,6 +456,13 @@ def _begin(room, who_sid):
         }, to=who_sid)
         return False
 
+    # ต้องมีผู้เล่นอย่างน้อย 1 คนเลือกตำแหน่ง FLIGHT OPS (คนคุมยาน)
+    if not room.has_spaceship_pilot():
+        msg = "ต้องมีผู้เล่นอย่างน้อย 1 คนเลือกตำแหน่ง FLIGHT OPS (คนคุมยาน 🚀) ก่อนเริ่มเกม"
+        socketio.emit("error_msg", {"msg": msg}, to=who_sid)
+        socketio.emit("error_msg", {"msg": msg}, to=room.code)
+        return False
+
     # ── ประตูข้อมูล ────────────────────────────────────────
     # DB ไม่พร้อม = ไม่มีอุกกาบาตให้จัดตาราง ต้องบอกออกไป ไม่ใช่เริ่มรอบเงียบๆ
     # แล้วปล่อยให้เด็กยืนมองฟ้าโล่ง 75 วินาที

@@ -240,6 +240,10 @@ class Room:
                 p.role = "ground"
             return p
 
+    def has_spaceship_pilot(self):
+        with self.lock:
+            return any(p.role == "spaceship" for p in self.active())
+
     def pulse_shield(self, sid):
         """ผู้ควบคุมยานเปิดใช้งาน Energy Pulse ฟื้นฟูเกราะยาน +15 HP"""
         with self.lock:
