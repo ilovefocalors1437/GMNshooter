@@ -603,6 +603,21 @@ def on_select_role(data=None):
         _emit_room(room)
 
 
+@socketio.on("lunar_orbit_reached")
+@safe
+def on_lunar_orbit_reached(data=None):
+    """ยานเดินทางถึงขั้วใต้ของดวงจันทร์สำเร็จ"""
+    room = rooms.room_of_sid(request.sid)
+    if room and room.state in ("playing", "qte"):
+        with room.lock:
+            if not room.arrived_at_moon:
+                room.arrived_at_moon = True
+                socketio.emit("lunar_orbit_reached", {
+                    "msg": "ยานเข้าสู่วงโคจรขั้วใต้ของดวงจันทร์สำเร็จ!",
+                    "bonus": "+30%",
+                }, to=room.code)
+
+
 @socketio.on("pulse_shield")
 @safe
 def on_pulse_shield(data=None):
@@ -753,32 +768,61 @@ def _round_watcher():
 
 def _finish_round(room):
     """
-    จบรอบ — บันทึก **คะแนนรวมของทีม** (Team Leaderboard)
+    จบรอบ — บันทึก **คะแนนรวมของทีม** (Team Leaderboard) พร้อมฉากจบ 3 รูปแบบ
     """
     with room.lock:
         passed, mult, rate = room.storm_result()
         qte_passed, qte_bonus, qte_rate = room.qte_result()
         players = room.active()
-        mission_rank = room.calc_rank()
 
-        res = board.submit_round(
-            [{"name": p.display, "raw": p.score, "kills": p.kills,
-              "bestCombo": p.best_combo, "isAdmin": p.is_admin, "slot": p.slot, "role": p.role}
-             for p in players],
-            storm_mult=mult, bonus=qte_bonus,
-            storm_passed=passed, qte_passed=qte_passed,
-            team_score=room.team_score, team_kills=room.kills,
-            team_best_combo=room.team_best_combo, code=room.code)
+        # คำนวณ Ending Type และตัวปรับคะแนน
+        if room.ship_hp <= 0:
+            ending_type = "destroyed"
+            mission_rank = "F"
+            final_team_score = 0
+            save_board = False
+        elif room.arrived_at_moon:
+            ending_type = "victory"
+            mission_rank = "S"
+            final_team_score = int(round(room.team_score * 1.3))  # +30% โบนัส
+            save_board = True
+        else:
+            ending_type = "timeout"
+            mission_rank = "B"
+            final_team_score = int(round(room.team_score * 0.7))  # -30% ขาดระยะทาง
+            save_board = True
 
-        room.last_board = res
+        if save_board:
+            res = board.submit_round(
+                [{"name": p.display, "raw": p.score, "kills": p.kills,
+                  "bestCombo": p.best_combo, "isAdmin": p.is_admin, "slot": p.slot, "role": p.role}
+                 for p in players],
+                storm_mult=mult, bonus=qte_bonus,
+                storm_passed=passed, qte_passed=qte_passed,
+                team_score=final_team_score, team_kills=room.kills,
+                team_best_combo=room.team_best_combo, code=room.code)
+            room.last_board = res
+            team_rank = res["teamRank"]
+        else:
+            res = {
+                "teamName": room.code,
+                "teamScore": 0,
+                "teamRawScore": room.team_score,
+                "teamKills": room.kills,
+                "teamBestCombo": room.team_best_combo,
+                "teamRank": None,
+                "players": [{"name": p.display, "score": 0, "raw": p.score, "kills": p.kills,
+                             "bestCombo": p.best_combo, "slot": p.slot, "role": p.role} for p in players]
+            }
+            team_rank = None
 
         summary = {
             "teamName": res["teamName"],
-            "teamScore": res["teamScore"],
-            "teamRawScore": res["teamRawScore"],
+            "teamScore": final_team_score,
+            "teamRawScore": room.team_score,
             "teamKills": res["teamKills"],
             "teamBestCombo": res["teamBestCombo"],
-            "teamRank": res["teamRank"],
+            "teamRank": team_rank,
             "results": res["players"],
             "stormMult": mult, "stormPassed": passed,
             "stormHits": room.storm_hits, "stormTotal": room.storm_total,
@@ -797,7 +841,9 @@ def _finish_round(room):
             "shipHp": room.ship_hp,
             "shipMaxHp": room.ship_max_hp,
             "missionRank": mission_rank,
-            "ce7Status": "ONLINE & SCANNING",
+            "endingType": ending_type,
+            "arrivedAtMoon": room.arrived_at_moon,
+            "ce7Status": "ONLINE & ACTIVE" if room.ship_hp > 0 else "DESTROYED",
         }
     socketio.emit("round_end", summary, to=room.code)
     _emit_room(room)

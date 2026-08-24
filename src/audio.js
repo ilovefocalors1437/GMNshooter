@@ -1,16 +1,8 @@
-// audio.js — เสียง 3 ชั้น: ยิง / โดน / เมืองโดน
-// "เสียงคือครึ่งหนึ่งของความรู้สึก" (spec §9)
+// audio.js — ระบบสังเคราะห์เสียง WebAudio API 3D Space & Ground Defense SFX
 //
-// ── หมายเหตุ: ทำไมไม่ใช้ Howler ──────────────────────────────
-// spec §9 เขียนไว้ว่าให้ใช้ Howler.js ผ่าน CDN แต่ในโปรเจกต์ไม่มีไฟล์เสียงสักไฟล์
-// (3D asset/ มีแต่ .glb) — Howler ไม่มีประโยชน์ถ้าไม่มีไฟล์ให้เล่น และการไปโหลด
-// เสียงจากเน็ตมาเองไม่ควรทำโดยไม่ถาม
-//
-// Phase A เลยสังเคราะห์เสียงสดด้วย WebAudio: ไม่ต้องมี asset เลย ได้เปรียบตรงที่
-// เปลี่ยน pitch ตาม combo ได้ฟรีๆ (ถ้าใช้ไฟล์ ต้องอัด 8 เวอร์ชัน)
-//
-// ถ้าจะสลับไป Howler ทีหลัง: แก้ไฟล์นี้ไฟล์เดียว เมธอดข้างล่างคือ interface ทั้งหมด
-//   sfx.shoot() / sfx.hit(combo) / sfx.cityHit() / sfx.whistle(yaw) / sfx.gameOver()
+// 1. เสียงป้อมปืนภาคพื้น: shoot(), hit(combo), burnout(), whistle()
+// 2. เสียงยานอวกาศ: startEngine(), stopEngine(), updateEngine(speed, turn), laserBlast()
+// 3. เสียงเหตุการณ์: radioBeep(), navRing(), shipExplosion(), victoryFanfare(), gameOver()
 
 import { CFG, clamp } from './config.js';
 
@@ -20,6 +12,14 @@ export class Sfx {
     this.master = null;
     this.noiseBuf = null;
     this.ready = false;
+
+    // เครื่องยนต์ยานอวกาศ (Engine Audio Loop)
+    this.engineRunning = false;
+    this.engineOsc1 = null;
+    this.engineOsc2 = null;
+    this.engineNoise = null;
+    this.engineGain = null;
+    this.engineFilter = null;
   }
 
   /** ต้องเรียกจาก user gesture — browser autoplay policy บล็อก AudioContext ถ้าไม่มี */
@@ -31,7 +31,7 @@ export class Sfx {
       this.master = this.ctx.createGain();
       this.master.gain.value = CFG.audio.master;
       this.master.connect(this.ctx.destination);
-      this.noiseBuf = this._makeNoise(1.0);
+      this.noiseBuf = this._makeNoise(2.0);
       this.ready = true;
     }
     if (this.ctx.state === 'suspended') this.ctx.resume();
@@ -85,7 +85,7 @@ export class Sfx {
     }
   }
 
-  // ── ชั้นที่ 1: ยิง ──────────────────────────────────────────
+  // ══ 1. เสียงป้อมปืนเลเซอร์ภาคพื้น ═════════════════════════════
   shoot() {
     if (!this.ready) return;
     this._noise({ dur: 0.07, gain: 0.35, type: 'bandpass', f0: 2400, f1: 600, q: 0.7 });
@@ -93,46 +93,106 @@ export class Sfx {
     this._tone({ dur: 0.05, gain: 0.14, type: 'sawtooth', f0: 1400, f1: 400 });
   }
 
-  // ── ชั้นที่ 2: โดน — pitch ขึ้นตาม combo ────────────────────
+  laserBlast() {
+    if (!this.ready) return;
+    this._tone({ dur: 0.12, gain: 0.32, type: 'sawtooth', f0: 880, f1: 180 });
+    this._noise({ dur: 0.08, gain: 0.22, type: 'bandpass', f0: 3200, f1: 800, q: 2 });
+  }
+
   hit(combo = 0) {
     if (!this.ready) return;
     const A = CFG.audio;
     const semis = Math.min(A.comboSemitoneMax, combo * A.comboSemitone);
     const k = Math.pow(2, semis / 12);
 
-    this._noise({ dur: 0.16, gain: 0.34, type: 'highpass', f0: 900 * k, f1: 2600 * k, q: 0.5 });
-    this._tone({ dur: 0.22, gain: 0.30, type: 'triangle', f0: 880 * k, f1: 240 * k });
-    this._tone({ dur: 0.30, gain: 0.34, type: 'sine', f0: 150, f1: 48 });     // สับ sub ให้ตึ้บ
-    // เสียงเหรียญเล็กๆ ตอน combo สูง — ให้รู้ว่ากำลังทำอะไรถูก
-    if (combo >= 2) this._tone({ dur: 0.10, gain: 0.10, type: 'square', f0: 1200 * k, f1: 1800 * k, delay: 0.04 });
+    this._tone({ dur: 0.18, gain: 0.38, type: 'sine', f0: 140 * k, f1: 52 * k });
+    this._noise({ dur: 0.22, gain: 0.45, type: 'lowpass', f0: 950 * k, f1: 120 * k });
+    this._noise({ dur: 0.10, gain: 0.24, type: 'highpass', f0: 1800 * k, f1: 400 * k });
+    if (combo >= 2) {
+      this._tone({ dur: 0.14, gain: 0.18, type: 'triangle', f0: 520 * k, f1: 260 * k, delay: 0.03 });
+    }
   }
 
-  // ── ชั้นที่ 3: เมืองโดน — ต่ำ ดัง นาน คนละโลกกับเสียงยิง ────
-  cityHit() {
-    if (!this.ready) return;
-    this._tone({ dur: 0.85, gain: 0.55, type: 'sine', f0: 110, f1: 34 });
-    this._noise({ dur: 0.65, gain: 0.40, type: 'lowpass', f0: 900, f1: 90, q: 0.8 });
-    this._tone({ dur: 0.35, gain: 0.18, type: 'sawtooth', f0: 70, f1: 28 });
-  }
-
-  /**
-   * ปล่อยให้ไหม้หมดกลางอากาศ — เสียงเบาๆ ไม่ใช่เสียงระเบิด
-   * ต้องไม่ดังเท่าเสียงยิงโดน ไม่งั้นเด็กจะสับสนว่าตัวเองทำสำเร็จหรือพลาด
-   */
   burnout() {
     if (!this.ready) return;
     this._noise({ dur: 0.34, gain: 0.13, type: 'lowpass', f0: 1400, f1: 180, q: 0.7 });
     this._tone({ dur: 0.30, gain: 0.10, type: 'sine', f0: 380, f1: 120 });
   }
 
-  /** เสียงหวีดตอน telegraph — pan ตาม yaw ให้เด็กหันไปถูกทาง */
   whistle(yaw = 0, dur = 1.2) {
     if (!this.ready) return;
-    const pan = clamp(-Math.sin(yaw), -1, 1) * -1;   // yaw บวก = ซ้าย → pan ซ้าย
+    const pan = clamp(-Math.sin(yaw), -1, 1) * -1;
     this._tone({ dur, gain: CFG.audio.whistleVolume, type: 'sine', f0: 2100, f1: 620, pan });
     this._noise({ dur, gain: CFG.audio.whistleVolume * 0.45, type: 'bandpass', f0: 2600, f1: 800, q: 8, pan });
   }
 
+  // ══ 2. เครื่องยนต์ยานอวกาศ (Engine Loop) ═════════════════════
+  startEngine() {
+    if (!this.ready || this.engineRunning) return;
+    try {
+      const c = this.ctx;
+      this.engineRunning = true;
+
+      this.engineGain = c.createGain();
+      this.engineGain.gain.setValueAtTime(0.001, c.currentTime);
+      this.engineGain.gain.exponentialRampToValueAtTime(0.22, c.currentTime + 0.5);
+
+      this.engineFilter = c.createBiquadFilter();
+      this.engineFilter.type = 'lowpass';
+      this.engineFilter.frequency.setValueAtTime(280, c.currentTime);
+
+      this.engineOsc1 = c.createOscillator();
+      this.engineOsc1.type = 'sawtooth';
+      this.engineOsc1.frequency.setValueAtTime(65, c.currentTime);
+
+      this.engineOsc2 = c.createOscillator();
+      this.engineOsc2.type = 'triangle';
+      this.engineOsc2.frequency.setValueAtTime(130, c.currentTime);
+
+      this.engineNoise = c.createBufferSource();
+      this.engineNoise.buffer = this.noiseBuf;
+      this.engineNoise.loop = true;
+
+      const noiseGain = c.createGain();
+      noiseGain.gain.value = 0.15;
+      this.engineNoise.connect(noiseGain).connect(this.engineFilter);
+
+      this.engineOsc1.connect(this.engineFilter);
+      this.engineOsc2.connect(this.engineFilter);
+      this.engineFilter.connect(this.engineGain).connect(this.master);
+
+      this.engineOsc1.start();
+      this.engineOsc2.start();
+      this.engineNoise.start();
+    } catch (e) {
+      console.warn('[audio] engine start error:', e);
+    }
+  }
+
+  updateEngine(turnIntensity = 0) {
+    if (!this.engineRunning || !this.ctx) return;
+    const t = this.ctx.currentTime;
+    const f = 65 + Math.abs(turnIntensity) * 25;
+    const filterF = 280 + Math.abs(turnIntensity) * 120;
+    this.engineOsc1.frequency.setTargetAtTime(f, t, 0.08);
+    this.engineOsc2.frequency.setTargetAtTime(f * 2, t, 0.08);
+    this.engineFilter.frequency.setTargetAtTime(filterF, t, 0.08);
+  }
+
+  stopEngine() {
+    if (!this.engineRunning || !this.ctx) return;
+    try {
+      this.engineGain.gain.setTargetAtTime(0.0001, this.ctx.currentTime, 0.2);
+      setTimeout(() => {
+        if (this.engineOsc1) { this.engineOsc1.stop(); this.engineOsc1.disconnect(); }
+        if (this.engineOsc2) { this.engineOsc2.stop(); this.engineOsc2.disconnect(); }
+        if (this.engineNoise) { this.engineNoise.stop(); this.engineNoise.disconnect(); }
+        this.engineRunning = false;
+      }, 250);
+    } catch (e) {}
+  }
+
+  // ══ 3. เสียงวิทยุ & สัญญาณนำร่อง & ฉากจบ ══════════════════════
   radioBeep() {
     if (!this.ready) return;
     this._tone({ dur: 0.08, gain: 0.25, type: 'sine', f0: 880, f1: 880 });
@@ -141,14 +201,25 @@ export class Sfx {
 
   navRing() {
     if (!this.ready) return;
-    this._tone({ dur: 0.12, gain: 0.28, type: 'sine', f0: 587.33, f1: 880.00 }); // D5 -> A5
-    this._tone({ dur: 0.22, gain: 0.24, type: 'sine', f0: 1174.66, f1: 1760.00, delay: 0.08 }); // D6 -> A6
+    this._tone({ dur: 0.14, gain: 0.32, type: 'sine', f0: 587.33, f1: 880.00 }); // D5 -> A5
+    this._tone({ dur: 0.24, gain: 0.28, type: 'sine', f0: 1174.66, f1: 1760.00, delay: 0.08 }); // D6 -> A6
   }
 
-  boost() {
+  shipExplosion() {
     if (!this.ready) return;
-    this._noise({ dur: 0.45, gain: 0.35, type: 'lowpass', f0: 380, f1: 120 });
-    this._tone({ dur: 0.35, gain: 0.22, type: 'sawtooth', f0: 120, f1: 65 });
+    this.stopEngine();
+    this._noise({ dur: 2.2, gain: 0.85, type: 'lowpass', f0: 420, f1: 30 });
+    this._tone({ dur: 1.8, gain: 0.65, type: 'sawtooth', f0: 160, f1: 35 });
+    this._noise({ dur: 1.2, gain: 0.50, type: 'bandpass', f0: 1600, f1: 100, q: 3, delay: 0.05 });
+  }
+
+  victoryFanfare() {
+    if (!this.ready) return;
+    const notes = [523.25, 659.25, 783.99, 1046.50, 1318.51, 1567.98]; // C5, E5, G5, C6, E6, G6
+    notes.forEach((freq, i) => {
+      this._tone({ dur: 0.35, gain: 0.25, type: 'triangle', f0: freq, f1: freq, delay: i * 0.12 });
+      this._tone({ dur: 0.40, gain: 0.18, type: 'sine', f0: freq, f1: freq * 1.002, delay: i * 0.12 });
+    });
   }
 
   gameOver() {

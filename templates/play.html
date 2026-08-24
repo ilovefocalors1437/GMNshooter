@@ -243,7 +243,7 @@
   body.is-pilot #cards { display: none !important; }
   body.is-pilot #flight-controls-hint { display: block; }
   body.is-pilot #flight-stick-zone { display: flex; }
-  body.is-pilot #btn-boost { display: flex; }
+  body.is-pilot #waypoint-markers-layer { display: block; }
 
   .pnd-title {
     font-size: calc(2.5 * var(--u)); letter-spacing: 0.16em; color: var(--accent);
@@ -254,6 +254,36 @@
   .pnd-row b { color: #fff; font-variant-numeric: tabular-nums; font-weight: 700; }
   .pnd-val-moon { color: #ffe066 !important; font-size: calc(3.4 * var(--u)); }
   .pnd-val-speed { color: var(--good) !important; font-size: calc(3.4 * var(--u)); }
+
+  /* ══ 3D Holographic Waypoint Markers on Screen ══ */
+  #waypoint-markers-layer {
+    position: absolute; inset: 0; pointer-events: none; display: none;
+  }
+  .wp-marker {
+    position: absolute; transform: translate(-50%, -50%);
+    display: flex; flex-direction: column; align-items: center; gap: calc(0.4 * var(--u));
+    transition: opacity 0.1s ease-out;
+  }
+  .wp-box {
+    width: calc(6.5 * var(--u)); height: calc(6.5 * var(--u));
+    border: calc(0.4 * var(--u)) solid var(--accent);
+    box-shadow: 0 0 calc(1.5 * var(--u)) var(--accent), inset 0 0 calc(1 * var(--u)) rgba(89,192,255,0.4);
+    border-radius: calc(0.6 * var(--u));
+    animation: wpSpin 4s linear infinite;
+  }
+  .wp-marker.moon-target .wp-box {
+    border-color: #ffe066;
+    box-shadow: 0 0 calc(2 * var(--u)) #ffe066, inset 0 0 calc(1.2 * var(--u)) rgba(255,224,102,0.5);
+    border-radius: 50%;
+  }
+  @keyframes wpSpin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+  .wp-text {
+    font-size: calc(2.4 * var(--u)); font-weight: 700; color: #fff;
+    background: rgba(4, 10, 24, 0.85); border: 1px solid rgba(89, 192, 255, 0.4);
+    padding: calc(0.4 * var(--u)) calc(1.4 * var(--u)); border-radius: calc(1 * var(--u));
+    white-space: nowrap; text-shadow: 0 0 calc(1 * var(--u)) rgba(0,0,0,0.8);
+  }
+  .wp-marker.moon-target .wp-text { border-color: rgba(255,224,102,0.6); color: #ffe066; }
 
   /* ── Pilot Flight Stick Virtual Zone ── */
   #flight-stick-zone {
@@ -278,22 +308,9 @@
     padding: calc(1 * var(--u)) calc(2.4 * var(--u)); border-radius: calc(1.6 * var(--u));
   }
 
-  /* ── Boost Button ── */
-  #btn-boost {
-    position: absolute; right: calc(24 * var(--u)); bottom: 6vh;
-    width: calc(15 * var(--u)); height: calc(15 * var(--u));
-    max-width: 88px; max-height: 88px;
-    border-radius: 50%; border: calc(0.5 * var(--u)) solid #ffe066;
-    background: rgba(40, 30, 8, 0.85); color: #ffe066;
-    display: none; align-items: center; justify-content: center;
-    font-size: calc(3 * var(--u)); font-weight: 700; letter-spacing: 0.04em;
-    pointer-events: auto; cursor: pointer; box-shadow: 0 0 calc(3 * var(--u)) rgba(255, 224, 102, 0.4);
-  }
-  #btn-boost:active, #btn-boost.active { transform: scale(0.94); background: #ffe066; color: #06121c; }
-
   /* ── Pulse Shield Button (For Pilot) ── */
   #pulse-shield-btn {
-    position:absolute; right:calc(42 * var(--u)); bottom:6vh;
+    position:absolute; right:calc(24 * var(--u)); bottom:6vh;
     padding:calc(2.4 * var(--u)) calc(3.6 * var(--u));
     border-radius:calc(3 * var(--u)); border:calc(.5 * var(--u)) solid #8fffa8;
     background:rgba(8, 30, 20, 0.85); color:#8fffa8;
@@ -370,6 +387,22 @@
   #qtebanner.on { opacity:1; animation:sb .5s ease-out; }
   body.qte #fire { animation:firepulse .5s ease-in-out infinite alternate; }
   @keyframes firepulse { to { transform:scale(1.12); } }
+
+  /* ══ Ending Cutscene Overlay Banner ══ */
+  #ending-cutscene-overlay {
+    position: fixed; inset: 0; z-index: 30; pointer-events: none;
+    display: none; flex-direction: column; align-items: center; justify-content: center;
+    background: rgba(2, 4, 10, 0.7); text-align: center; padding: 4vh;
+  }
+  #ending-cutscene-overlay.on { display: flex; }
+  #ending-title {
+    font-size: calc(8.5 * var(--u)); font-weight: 900; letter-spacing: 0.08em;
+    text-shadow: 0 0 calc(4 * var(--u)) currentColor;
+  }
+  #ending-sub {
+    font-size: calc(4 * var(--u)); margin-top: 1.5vh; font-weight: 700;
+    max-width: 600px; line-height: 1.5;
+  }
 
   #mousehint { display:none; position:absolute; left:50%; bottom:14vh;
                transform:translateX(-50%); white-space:nowrap;
@@ -593,9 +626,12 @@
     </div>
     <div class="pnd-row">
       <span>วงแหวนนำร่องที่ผ่าน</span>
-      <b id="pnd-rings-passed" style="color:var(--accent)">0 / 10 RINGS</b>
+      <b id="pnd-rings-passed" style="color:var(--accent)">0 / 18 RINGS</b>
     </div>
   </div>
+
+  <!-- 3D Holographic Waypoint Markers Layer -->
+  <div id="waypoint-markers-layer"></div>
 
   <!-- Spacecraft Shield HP & Altitude Indicator -->
   <div id="ship-status-box">
@@ -634,20 +670,23 @@
 
   <div id="cross"><div class="ring"></div><div class="d"></div></div>
   <div id="mousehint">คลิกเพื่อล็อกเมาส์แล้วเล็งได้เลย · คลิก = ยิง · Esc = ปลดล็อก</div>
-  <div id="flight-controls-hint">🎮 บังคับยาน: [W/A/S/D หรือ Drag หน้าจอ] เลี้ยวทิศทาง · [SPACE / ปุ่ม BOOST] เร่งเครื่องยนต์</div>
+  <div id="flight-controls-hint">🎮 บังคับยาน: [W/A/S/D หรือ Mouse/Joystick] เลี้ยว/เชิดหัว 3 มิติ</div>
 
   <!-- Virtual Flight Joystick for Pilot -->
   <div id="flight-stick-zone">
     <div id="flight-stick-thumb"></div>
   </div>
 
-  <!-- Pilot Thruster Boost Button -->
-  <button type="button" id="btn-boost">⚡ BOOST</button>
-
   <!-- Pilot Skill: Pulse Shield -->
   <button type="button" id="pulse-shield-btn">🛡️ PULSE</button>
 
   <div id="fire">ยิง</div>
+</div>
+
+<!-- Ending Cutscene Overlay Banner -->
+<div id="ending-cutscene-overlay">
+  <div id="ending-title">ภารกิจสำเร็จ!</div>
+  <div id="ending-sub">ยาน Long March 5 เข้าสู่วงโคจรขั้วใต้ของดวงจันทร์เรียบร้อยแล้ว</div>
 </div>
 
 <!-- 6. สรุปผล & E-Certificate ระดับทีม -->

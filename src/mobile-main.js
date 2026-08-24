@@ -1,12 +1,13 @@
-// mobile-main.js — Thailand CE-7 Moonshot x GMNshooter (True 3D Space Flight Simulation & Co-op)
+// mobile-main.js — Thailand CE-7 Moonshot x GMNshooter (3D Space Flight, SFX & 3 Endings)
 //
-// 1. True 3D Flight Physics (Pitch, Yaw, Roll, Velocity, Forward Thrust & Afterburners)
-// 2. Full PC (WASD + Mouse Flight Simulator) & Mobile (360° 3D Flight Stick + Boost Button)
-// 3. Full Black Screen Cinematic Story Sequence (4-Act Timeline with Thai Male Voice TTS)
-// 4. Dual Role Gameplay:
-//    - 🚀 FLIGHT OPS (PILOT): บังคับทิศทางยาน Long March 5 บินในอวกาศแบบ 3D แท้ๆ
-//    - 📡 GROUND CREW: พลเลเซอร์ภาคพื้นดิน ยิงสแกน/สกัดกั้นสะเก็ดดาว GMN คุ้มกันแนวบินยาน
-// 5. ระบบคะแนนรวมของทั้งทีม (Team Score & Team Combo) & E-Certificate
+// 1. True 3D Flight Physics (Continuous Constant Speed, No Boost, WASD+Mouse on PC, 360° Joystick on Mobile)
+// 2. WebAudio Sound Engine: Engine Hum Loop, Laser Blast, Hit Synth, Ship Explosion & Victory Fanfare
+// 3. 3D Waypoint HUD Markers (Projected Square Markers [ ◻ ] with distance text km to Next Ring & Moon)
+// 4. 3 Distinct Mission Endings:
+//    - 💥 Cutscene 6.1 (HP <= 0): Spaceship Explodes, Red Screen, Disqualified
+//    - ⚠️ Cutscene 6.2 (Timeout): Incomplete Trajectory, -30% Penalty
+//    - 🚀 Cutscene 6.3 (Lunar Orbit): Orbit South Pole, Fanfare, +30% Bonus
+// 5. 4-Act Cinematic Black Screen Opening with Thai Male Voice TTS
 
 import * as THREE from 'three';
 import { CFG, DEG, clamp, damp } from './config.js';
@@ -190,9 +191,9 @@ const S = {
   qteOn: false, qteNeed: 0, qteHits: 0, qteEndMs: 0, qteMeteorId: 0,
 
   // 3D Flight Control Inputs
-  pitchInput: 0, // +1 = Climb / -1 = Dive
-  yawInput: 0,   // -1 = Left / +1 = Right
-  isBoosting: false,
+  pitchInput: 0,
+  yawInput: 0,
+  hasReachedMoon: false,
 };
 const serverNow = () => performance.now() + S.offset;
 
@@ -306,9 +307,6 @@ function updateRoleUi() {
   const pulseBtn = $('pulse-shield-btn');
   if (pulseBtn) pulseBtn.style.display = isShip ? 'flex' : 'none';
 
-  const boostBtn = $('btn-boost');
-  if (boostBtn) boostBtn.style.display = isShip ? 'flex' : 'none';
-
   if (rig && rig.root) rig.root.visible = !isShip;
 }
 
@@ -345,13 +343,11 @@ sock.on('room', st => {
   syncTeammateTurrets(st.players || []);
 });
 
-// รับองศาการเล็งของเพื่อนร่วมทีม
 sock.on('player_aim', d => {
   const r = otherTurrets.get(d.slot);
   if (r) r.aim(d.yaw, d.pitch);
 });
 
-// รับ Action การยิงของเพื่อน (Muzzle Flash + Laser Tracer)
 sock.on('player_fire', d => {
   const r = otherTurrets.get(d.slot);
   if (r) {
@@ -365,23 +361,30 @@ sock.on('player_fire', d => {
   }
 });
 
-// รับการเคลื่อนที่/ทิศทางบินของยานจากคนคุมยาน (Flight Sync)
 sock.on('ship_nav', d => {
   if (S.role !== 'spaceship') {
     spaceEnv.applyRemoteNavState(d);
   }
 });
 
-// รับ Event บินผ่านวงแหวนนำร่องสู่ดวงจันทร์ (Lunar Nav Waypoint)
+// ยานบินผ่าน Waypoint Ring
 sock.on('nav_ring_passed', d => {
   if (d.score !== undefined) S.score = d.score;
   if (d.shipHp !== undefined) { S.shipHp = d.shipHp; S.shipMaxHp = d.shipMaxHp; paintShipHp(); }
   sfx.navRing();
   juice.shake(0.6);
-  floatText.add(new THREE.Vector3(0, 3.0, -8), `+${d.bonus || 500} LUNAR WAYPOINT BONUS! 🚀`);
+  floatText.add(new THREE.Vector3(0, 3.0, -8), `+${d.bonus || 400} LUNAR WAYPOINT BONUS! 🚀`);
 });
 
-// รับ Event Energy Pulse ฟื้นฟูเกราะ
+// ยานเข้าสู่วงโคจรดวงจันทร์สำเร็จ (Victory Trigger)
+sock.on('lunar_orbit_reached', d => {
+  S.hasReachedMoon = true;
+  spaceEnv.hasReachedMoon = true;
+  sfx.victoryFanfare();
+  showEndingBanner('🚀 ภารกิจสำเร็จ!', 'ยานเข้าสู่วงโคจรขั้วใต้ของดวงจันทร์สำเร็จ (+30% TEAM BONUS)', '#ffe066');
+});
+
+// Energy Pulse ฟื้นฟูเกราะ
 sock.on('shield_pulse', d => {
   S.shipHp = d.shipHp;
   S.shipMaxHp = d.shipMaxHp;
@@ -393,20 +396,39 @@ sock.on('shield_pulse', d => {
   setTimeout(() => document.body.classList.remove('heal-flash'), 300);
 });
 
-// รับ Event ดาเมจยาน Long March 5
+// ยานโดนดาเมจ
 sock.on('ship_damage', d => {
   S.shipHp = d.shipHp;
   S.shipMaxHp = d.shipMaxHp;
   paintShipHp();
   juice.shake(1.1);
-  sfx.hit(1);
 
-  const hitPos = new THREE.Vector3(0, 1.4, -4);
-  floatText.add(hitPos, `-${d.dmg} เกราะยาน! (${d.speed} km/s)`);
-
-  document.body.classList.add('hit-flash');
-  setTimeout(() => document.body.classList.remove('hit-flash'), 180);
+  if (S.shipHp <= 0) {
+    // Cutscene 6.1: ยานถูกทำลาย
+    spaceEnv.triggerShipExplosion();
+    sfx.shipExplosion();
+    showEndingBanner('💥 ภารกิจล้มเหลว!', 'ยาน Long March 5 ถูกสะเก็ดดาวทำลายกลางอากาศ (DISQUALIFIED)', '#ff4d6d');
+  } else {
+    sfx.hit(1);
+    const hitPos = new THREE.Vector3(0, 1.4, -4);
+    floatText.add(hitPos, `-${d.dmg} เกราะยาน! (${d.speed} km/s)`);
+    document.body.classList.add('hit-flash');
+    setTimeout(() => document.body.classList.remove('hit-flash'), 180);
+  }
 });
+
+function showEndingBanner(title, sub, color) {
+  const overlay = $('ending-cutscene-overlay');
+  const tEl = $('ending-title');
+  const sEl = $('ending-sub');
+  if (overlay && tEl && sEl) {
+    tEl.textContent = title;
+    tEl.style.color = color;
+    sEl.textContent = sub;
+    overlay.classList.add('on');
+    setTimeout(() => overlay.classList.remove('on'), 3500);
+  }
+}
 
 // ══ เริ่มรอบ: แสดง 4-Act Cinematic Story + เสียงพากย์ TTS ══════
 sock.on('round_start', d => {
@@ -414,12 +436,14 @@ sock.on('round_start', d => {
   S.stormMinScale = d.stormMinScale; S.phase = 'normal';
   S.stormHits = 0; S.stormTotal = 0;
   S.shipHp = d.shipHp || 200; S.shipMaxHp = d.shipMaxHp || 200;
+  S.hasReachedMoon = false;
   document.body.classList.remove('storm');
   $('stormbar').style.display = 'none';
   contactLog.setStormMode(false);
   S.qteOn = false; S.qteHits = 0; S.qteNeed = 0; S.qteMeteorId = 0;
   document.body.classList.remove('qte');
   $('qtebar').style.display = 'none';
+  $('ending-cutscene-overlay')?.classList.remove('on');
   S.roundId = d.roundId; S.startMs = d.startMs; S.endMs = d.endMs;
   S.schedule = d.schedule;
   S.spawned = new Set();
@@ -445,7 +469,15 @@ sock.on('tick', d => {
   else if (d.score !== undefined) S.score = d.score;
   if (d.teamCombo !== undefined) S.combo = d.teamCombo;
   else if (d.combo !== undefined) S.combo = d.combo;
-  if (d.shipHp !== undefined) { S.shipHp = d.shipHp; S.shipMaxHp = d.shipMaxHp; paintShipHp(); }
+  if (d.shipHp !== undefined) {
+    S.shipHp = d.shipHp;
+    S.shipMaxHp = d.shipMaxHp;
+    paintShipHp();
+    if (S.shipHp <= 0 && !spaceEnv.isDestroyed) {
+      spaceEnv.triggerShipExplosion();
+      sfx.shipExplosion();
+    }
+  }
   S.kills = d.kills;
   if (d.qteNeed !== undefined) { S.qteHits = d.qteHits; S.qteNeed = d.qteNeed; }
   if (d.phase && d.phase !== S.phase) setPhase(d.phase);
@@ -536,31 +568,45 @@ sock.on('destroyed', d => {
   }
 });
 
-// ══ จบรอบ & แจก E-Certificate ระดับทีม ═════════════════════
+// ══ จบรอบ: แสดงฉากจบ 3 แบบ & E-Certificate ══════════════════
 sock.on('round_end', d => {
   S.playing = false;
   S.qteOn = false;
+  sfx.stopEngine();
   document.body.classList.remove('storm');
   document.body.classList.remove('qte');
   $('qtebar').style.display = 'none';
 
+  const endType = d.endingType || (d.shipHp <= 0 ? 'destroyed' : (d.arrivedAtMoon ? 'victory' : 'timeout'));
   $('sum-team').textContent = d.teamName || S.code || 'ทีมผู้พิทักษ์';
   $('sum-score').textContent = (d.teamScore || S.score || 0).toLocaleString('en-US');
-  
-  const rank = d.missionRank || 'A';
-  const rankColors = { 'S': '#ffe066', 'A': '#8fffa8', 'B': '#59c0ff', 'C': '#ff4d6d' };
-  const rankNames = {
-    'S': 'RANK S · สุดยอดทีมผู้พิทักษ์อวกาศไร้ที่ติ',
-    'A': 'RANK A · ภารกิจคุ้มกันยานยอดเยี่ยม',
-    'B': 'RANK B · ภารกิจสำเร็จลุล่วง',
-    'C': 'RANK C · โหมดฉุกเฉิน / ผ่านการทดสอบ',
-  };
+
+  let rank = d.missionRank || 'A';
+  let badgeTitle = 'ภารกิจคุ้มกันยานยอดเยี่ยม';
+  let badgeBorder = '#8fffa8';
+  let badgeSub = 'THAILAND CE-7 MOONSHOT · CREW CERTIFICATE';
+
+  if (endType === 'destroyed') {
+    rank = 'F';
+    badgeTitle = '💥 DEFEAT · ยานถูกทำลายกลางอากาศ (DISQUALIFIED)';
+    badgeBorder = '#ff4d6d';
+    badgeSub = 'คะแนนไม่ถูกบันทึกลง Leaderboard';
+  } else if (endType === 'victory') {
+    rank = 'S';
+    badgeTitle = '🏆 VICTORY · ยานเข้าสู่วงโคจรขั้วใต้ดวงจันทร์ (+30% BONUS)';
+    badgeBorder = '#ffe066';
+    badgeSub = 'ภารกิจประวัติศาสตร์สำเร็จสมบูรณ์แบบ';
+  } else if (endType === 'timeout') {
+    badgeTitle = '⚠️ INCOMPLETE · ยานไม่ถึงวงโคจรดวงจันทร์ (-30% PENALTY)';
+    badgeBorder = '#59c0ff';
+    badgeSub = 'ภารกิจขาดระยะทางเข้าสู่วงโคจร';
+  }
 
   $('sum-kills').innerHTML =
-    `<div class="cert-badge" style="border-color:${rankColors[rank] || '#59c0ff'}; color:${rankColors[rank] || '#59c0ff'}">` +
+    `<div class="cert-badge" style="border-color:${badgeBorder}; color:${badgeBorder}">` +
     `<span class="cert-rank">${rank}</span>` +
-    `<div class="cert-title">${rankNames[rank]}</div>` +
-    `<div class="cert-sub">THAILAND CE-7 MOONSHOT · CREW CERTIFICATE</div>` +
+    `<div class="cert-title">${badgeTitle}</div>` +
+    `<div class="cert-sub">${badgeSub}</div>` +
     `</div>` +
     `<div style="margin-top:1.2vh;font-size:calc(3.4*var(--u));">` +
     `ทีมสอยได้ทั้งหมด <b>${d.teamKills || d.kills || 0}</b> ดวง · เกราะยาน <b>${d.shipHp || 0}/200 HP</b>` +
@@ -588,7 +634,7 @@ sock.on('round_end', d => {
     : '<div class="s-empty">รอบนี้ยังไม่ได้สักดวง ลองใหม่อีกรอบ</div>';
 
   $('sum-nums').innerHTML =
-    `<div class="sc"><span>สถานะอุปกรณ์ไทย CE-7 MATCH</span><b style="color:#8fffa8">ONLINE & ACTIVE 🇹🇭</b></div>` +
+    `<div class="sc"><span>สถานะอุปกรณ์ไทย CE-7 MATCH</span><b style="color:${d.shipHp > 0 ? '#8fffa8' : '#ff4d6d'}">${d.ce7Status || 'ONLINE'} 🇹🇭</b></div>` +
     `<div class="sc"><span>อุกกาบาตจริงในฐานข้อมูล</span><b data-to="${d.gmnTotal || 0}">0</b></div>` +
     `<div class="sc"><span>กล้องเครือข่าย GMN ทั่วโลก</span><b data-to="${d.gmnCameras}" data-pre="~">0</b></div>`;
   countUp($('sum-nums'));
@@ -633,15 +679,9 @@ $('name-go').onclick = () => {
   sock.emit('set_name', { name: $('name').value });
 };
 
-// ปุ่มเลือก Role ในหน้า Lobby
-$('role-ground').onclick = () => {
-  sock.emit('select_role', { role: 'ground' });
-};
-$('role-spaceship').onclick = () => {
-  sock.emit('select_role', { role: 'spaceship' });
-};
+$('role-ground').onclick = () => { sock.emit('select_role', { role: 'ground' }); };
+$('role-spaceship').onclick = () => { sock.emit('select_role', { role: 'spaceship' }); };
 
-// ปุ่มควบคุม Cinematic Story
 $('story-prev').onclick = () => {
   if (currentStoryAct > 0) renderStoryAct(currentStoryAct - 1, true);
 };
@@ -669,16 +709,7 @@ $('pulse-shield-btn').onclick = () => {
   sock.emit('pulse_shield', {});
 };
 
-// ปุ่ม Boost ของคนคุมยาน
-const boostBtn = $('btn-boost');
-if (boostBtn) {
-  boostBtn.addEventListener('mousedown', () => { S.isBoosting = true; sfx.boost(); });
-  window.addEventListener('mouseup', () => { S.isBoosting = false; });
-  boostBtn.addEventListener('touchstart', e => { S.isBoosting = true; sfx.boost(); e.preventDefault(); }, { passive: false });
-  ['touchend', 'touchcancel'].forEach(ev => boostBtn.addEventListener(ev, () => { S.isBoosting = false; }));
-}
-
-// ══ Virtual 3D Flight Stick สำหรับคนคุมยาน (Mobile 360° Analog) ════
+// ══ Virtual 3D Flight Stick สำหรับคนคุมยาน ════════════════════
 const stickZone = $('flight-stick-zone');
 const stickThumb = $('flight-stick-thumb');
 let stickActive = false, stickCenter = { x: 0, y: 0 };
@@ -694,10 +725,8 @@ if (stickZone && stickThumb) {
     const nx = (Math.cos(ang) * clampedR) / maxR;
     const ny = (Math.sin(ang) * clampedR) / maxR;
 
-    // nx: เลี้ยวซ้าย/ขวา (Yaw)
-    // -ny: ลากขึ้น = เชิดหัวขึ้น (+Pitch) / ลากลง = กดหัวลง (-Pitch)
     S.yawInput = nx;
-    S.pitchInput = -ny;
+    S.pitchInput = -ny; // ลากขึ้น = เชิดหัว / ลากลง = กดหัว
 
     stickThumb.style.transform = `translate(${nx * maxR}px, ${ny * maxR}px)`;
   }
@@ -732,7 +761,7 @@ if (stickZone && stickThumb) {
 }
 
 // ══ PC / Desktop 3D Flight Controls (Keyboard WASD + Mouse) ════
-const keys = { w: false, a: false, s: false, d: false, space: false };
+const keys = { w: false, a: false, s: false, d: false };
 window.addEventListener('keydown', e => {
   if (S.role !== 'spaceship') return;
   const k = e.key.toLowerCase();
@@ -740,7 +769,6 @@ window.addEventListener('keydown', e => {
   if (k === 'd' || k === 'arrowright') keys.d = true;
   if (k === 'w' || k === 'arrowup') keys.w = true;
   if (k === 's' || k === 'arrowdown') keys.s = true;
-  if (k === ' ' || k === 'shift') { keys.space = true; sfx.boost(); }
 });
 window.addEventListener('keyup', e => {
   if (S.role !== 'spaceship') return;
@@ -749,10 +777,8 @@ window.addEventListener('keyup', e => {
   if (k === 'd' || k === 'arrowright') keys.d = false;
   if (k === 'w' || k === 'arrowup') keys.w = false;
   if (k === 's' || k === 'arrowdown') keys.s = false;
-  if (k === ' ' || k === 'shift') keys.space = false;
 });
 
-// เมาส์ช่วยบังคับทิศทางยานในโหมด 3D Flight บน PC
 let mouseYaw = 0, mousePitch = 0;
 window.addEventListener('mousemove', e => {
   if (S.role !== 'spaceship' || !S.playing || !look.locked) return;
@@ -788,7 +814,7 @@ scene.add(buildCity());
 scene.add(buildArcMarkers());
 scene.add(new THREE.HemisphereLight(0x35509a, 0x05070d, 1.2));
 const moonLight = new THREE.DirectionalLight(0xa8c4ff, 1.8);
-moonLight.position.set(-140, 250, -420);
+moonLight.position.set(-280, 520, -1100);
 scene.add(moonLight);
 
 const camera = new THREE.PerspectiveCamera(
@@ -916,8 +942,12 @@ function fire() {
   if (t - S.lastFireAt < CFG.bullet.fireCooldownMs) return;
   S.lastFireAt = t;
 
-  if (S.role === 'ground') rig.fire();
-  sfx.shoot();
+  if (S.role === 'ground') {
+    rig.fire();
+    sfx.shoot();
+  } else {
+    sfx.laserBlast();
+  }
   juice.shake(CFG.juice.shakeFire);
   if (S.qteOn) { sock.emit('qte_tap', {}); } else { sock.emit('shot', {}); }
 
@@ -966,7 +996,7 @@ fb.addEventListener('touchstart', e => {
   holding = false; fb.classList.remove('down'); e.preventDefault(); e.stopPropagation();
 }, { passive: false }));
 fb.addEventListener('mousedown', () => { holding = true; fb.classList.add('down'); holdLoop(); });
-window.addEventListener('mouseup', () => { holding = false; fb.classList.remove('down'); });
+window.addEventListener('mouseup', () => { holding = false; });
 
 window.addEventListener('mousedown', (e) => {
   if (!look.locked || e.button !== 0) return;
@@ -993,6 +1023,43 @@ function probeQuality(now) {
       if (rig && rig.light) rig.light.visible = false;
     }
   }
+}
+
+// ══ 3D Waypoint Projection Markers บน HUD ═════════════════
+const _vProj = new THREE.Vector3();
+function updateWaypointMarkers() {
+  const layer = $('waypoint-markers-layer');
+  if (!layer || S.role !== 'spaceship') return;
+
+  const r = spaceEnv.getNextActiveRing();
+  let html = '';
+
+  // 1. Next Waypoint Ring Marker
+  if (r) {
+    _vProj.copy(r.pos).project(camera);
+    if (_vProj.z < 1.0) { // อยู่ด้านหน้ากล้อง
+      const x = (_vProj.x * 0.5 + 0.5) * window.innerWidth;
+      const y = (-(_vProj.y * 0.5) + 0.5) * window.innerHeight;
+      const dist = Math.round(spaceEnv.flightPos.distanceTo(r.pos) * 12);
+      html += `<div class="wp-marker" style="left:${x}px; top:${y}px;">` +
+        `<div class="wp-box"></div>` +
+        `<div class="wp-text">◻ RING #${r.id} · ${dist.toLocaleString()} km</div>` +
+        `</div>`;
+    }
+  }
+
+  // 2. Moon Marker
+  _vProj.copy(spaceEnv.moonTargetPos).project(camera);
+  if (_vProj.z < 1.0) {
+    const x = (_vProj.x * 0.5 + 0.5) * window.innerWidth;
+    const y = (-(_vProj.y * 0.5) + 0.5) * window.innerHeight;
+    html += `<div class="wp-marker moon-target" style="left:${x}px; top:${y}px;">` +
+      `<div class="wp-box"></div>` +
+      `<div class="wp-text">🌕 MOON · ${Math.round(spaceEnv.distToMoonKm).toLocaleString()} km</div>` +
+      `</div>`;
+  }
+
+  layer.innerHTML = html;
 }
 
 // ══ HUD Painting ══════════════════════════════════════════
@@ -1067,6 +1134,7 @@ function frame(nowReal) {
     if (storyTimer) clearInterval(storyTimer);
     if (window.speechSynthesis) window.speechSynthesis.cancel();
     pane(null);
+    if (S.role === 'spaceship') sfx.startEngine();
   }
 
   // เดินตารางอุกกาบาต
@@ -1083,45 +1151,41 @@ function frame(nowReal) {
 
   // ══ 3D Flight Physics Controls (สำหรับคนคุมยาน) ════════════
   if (S.role === 'spaceship') {
-    // รวบรวม Input จากคีย์บอร์ด, เมาส์, และ Virtual Touch Joystick
     let pIn = S.pitchInput;
     let yIn = S.yawInput;
 
-    // W/Up = เชิดหัวขึ้น (+1) / S/Down = กดหัวลง (-1)
     if (keys.w) pIn += 1.0;
     if (keys.s) pIn -= 1.0;
-    // A/Left = เลี้ยวซ้าย (-1) / D/Right = เลี้ยวขวา (+1)
     if (keys.a) yIn -= 1.0;
     if (keys.d) yIn += 1.0;
 
-    // รวม Input จากเมาส์บน Desktop
     pIn += mousePitch;
     yIn += mouseYaw;
     mousePitch = 0;
     mouseYaw = 0;
 
-    const boost = S.isBoosting || keys.space;
+    spaceEnv.setSteerInput(pIn, yIn);
+    sfx.updateEngine(yIn);
 
-    // ส่งค่าเข้า Engine ฟิสิกส์ 3D
-    spaceEnv.setSteerInput(pIn, yIn, boost);
-
-    // ตรวจสอบการบินผ่านวงแหวนนำร่องสู่ดวงจันทร์
-    if (S.playing) {
+    if (S.playing && !spaceEnv.isDestroyed) {
       spaceEnv.checkNavRingPassed(ring => {
         sock.emit('nav_waypoint', { ringId: ring.id });
       });
+
+      if (spaceEnv.hasReachedMoon && !S.hasReachedMoon) {
+        S.hasReachedMoon = true;
+        sock.emit('lunar_orbit_reached', {});
+      }
     }
 
-    // ขยับกล้อง 3D Chase Camera ตามตัวยาน
     spaceEnv.updateFlightCamera(camera, dt);
+    updateWaypointMarkers();
 
-    // ส่ง Quaternion และพิกัด 3D Sync ไปยังเพื่อนในห้อง
     if (S.playing && (nowReal - S.lastNavEmit > 50)) {
       S.lastNavEmit = nowReal;
       sock.emit('ship_nav', spaceEnv.getNavState());
     }
   } else {
-    // ผู้เล่น Ground Crew อยู่ที่หอดูดาวภาคพื้นดิน
     look.update(dt);
     camera.position.set(
       Math.sin(look.yaw) * CFG.camera.eye.z, CFG.camera.eye.y,
@@ -1138,10 +1202,8 @@ function frame(nowReal) {
     }
   }
 
-  // Sync ป้อมปืนของเพื่อนร่วมทีม
   otherTurrets.forEach(r => r.update(dt));
 
-  // อัปเดตอุกกาบาต + เช็คดวงที่ไหม้หมดโดยไม่มีใครยิงทัน (Missed -> ยานโดนดาเมจ)
   field.update(t, burnedOutBuffer);
   for (const bm of burnedOutBuffer) {
     if (!S.destroyed.has(bm.id) && !S.missed.has(bm.id)) {
@@ -1155,7 +1217,6 @@ function frame(nowReal) {
   contactLog.update(dt);
   floatText.update(dt);
 
-  // อัปเดตวัตถุอวกาศ 3D (ดวงจันทร์, จรวด Long March 5, CE-7 Probe, จานเรดาร์, วงแหวนนำร่อง)
   const elapsedSec = (t - S.startMs) * 0.001;
   const qteRate = S.qteNeed ? Math.min(1.0, S.qteHits / S.qteNeed) : 0;
   spaceEnv.update(dt, elapsedSec, S.phase, qteRate, S.role === 'spaceship');
@@ -1202,4 +1263,4 @@ function escapeHtml(s) {
 
 pane(ADMIN_MODE || URL_CODE || SPECTATE ? 'p-lobby' : 'p-home');
 requestAnimationFrame(frame);
-window.__c = { S, field, look, juice, sock, tracers, camera, serverNow, spaceEnv };
+window.__c = { S, field, look, juice, sock, tracers, camera, serverNow, spaceEnv, sfx };

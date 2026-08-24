@@ -138,6 +138,8 @@ class Room:
         self._qte_last_tap = {}          # sid -> เวลาแตะล่าสุด (กันรัวเกินมนุษย์)
 
         self.ended_ms = 0.0
+        self.arrived_at_moon = False
+        self.ending_type = "normal"
         # คนที่ "ดู" อย่างเดียว ไม่กินสล็อต ไม่นับเป็นผู้เล่น (จอ admin)
         self.watchers = set()
 
@@ -594,16 +596,14 @@ class Room:
             }
 
     def calc_rank(self):
-        """ระดับความสำเร็จของภารกิจ Thailand CE-7 Moonshot (S, A, B, C)"""
-        qte_passed, _, _ = self.qte_result()
-        if self.ship_hp >= 150 and qte_passed:
+        """ระดับความสำเร็จของภารกิจ Thailand CE-7 Moonshot"""
+        if self.ship_hp <= 0:
+            return "F"
+        if self.arrived_at_moon:
             return "S"
-        elif self.ship_hp >= 80:
+        if self.ship_hp >= 100:
             return "A"
-        elif self.ship_hp > 0:
-            return "B"
-        else:
-            return "C"
+        return "B"
 
     def ended_for(self, seconds):
         with self.lock:
@@ -620,6 +620,8 @@ class Room:
             self.destroyed = {}
             self.missed = set()
             self.ship_hp = C.SHIP_MAX_HP
+            self.arrived_at_moon = False
+            self.ending_type = "normal"
             self.team_score = 0
             self.team_combo = 0
             self.team_best_combo = 0
